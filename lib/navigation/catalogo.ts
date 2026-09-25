@@ -616,6 +616,16 @@ export const NAV_CATALOG = [
     // navegável. Para voltar a mostrá-la, basta devolver `sidebar: true`.
   },
   {
+    href: "/app/integrations/zapsign",
+    label: "ZapSign",
+    description: "Conecte assinatura eletrônica para contratos e propostas do atendimento.",
+    icon: "FileText",
+    group: "canais",
+    minRole: "admin",
+    sidebar: true,
+    modulo: "zapsign",
+  },
+  {
     href: "/app/webhooks",
     label: "Webhooks",
     description: "Avise outros sistemas quando algo acontecer aqui dentro.",

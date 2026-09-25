@@ -11,11 +11,11 @@ function json(body: unknown, status = 200): Response {
 
 describe("ZapSignClient", () => {
   it("usa bearer token e monta os caminhos oficiais de documento", async () => {
-    const fetchImpl = vi.fn(async () => json([{ token: "doc-1" }]));
+    const fetchImpl = vi.fn<typeof fetch>(async () => json([{ token: "doc-1" }]));
     const client = new ZapSignClient({
       apiToken: "secret-token",
       baseUrl: "https://zap.local/",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl,
     });
 
     await client.listDocuments({ page: 2, status: "pending" });
@@ -26,16 +26,17 @@ describe("ZapSignClient", () => {
         headers: expect.any(Headers),
       }),
     );
-    const headers = fetchImpl.mock.calls[0]?.[1]?.headers as Headers;
+    const headers = fetchImpl.mock.calls[0]?.[1]?.headers;
+    if (!(headers instanceof Headers)) throw new Error("fetch recebeu headers fora do contrato");
     expect(headers.get("Authorization")).toBe("Bearer secret-token");
   });
 
   it("cria por modelo no endpoint de modelos e por arquivo no endpoint de documentos", async () => {
-    const fetchImpl = vi.fn(async () => json({ token: "doc-1" }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => json({ token: "doc-1" }));
     const client = new ZapSignClient({
       apiToken: "secret-token",
       baseUrl: "https://zap.local",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl,
     });
 
     await client.createDocumentFromTemplate({ template_id: "tpl" });
@@ -46,11 +47,11 @@ describe("ZapSignClient", () => {
   });
 
   it("propaga status e detalhe de erro da ZapSign", async () => {
-    const fetchImpl = vi.fn(async () => json({ detail: "token inválido" }, 401));
+    const fetchImpl = vi.fn<typeof fetch>(async () => json({ detail: "token inválido" }, 401));
     const client = new ZapSignClient({
       apiToken: "bad-token",
       baseUrl: "https://zap.local",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl,
     });
 
     await expect(client.getDocument("doc-1")).rejects.toMatchObject({

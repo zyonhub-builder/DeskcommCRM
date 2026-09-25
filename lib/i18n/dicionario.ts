@@ -4414,6 +4414,135 @@ export const DICIONARIO: Traducoes = {
   "última sync:": { es: "última sync:" },
   "Escopos:": { es: "Permisos:" },
   "Webhooks registrados:": { es: "Webhooks registrados:" },
+  ZapSign: { es: "ZapSign" },
+  "Conecte assinatura eletrônica para contratos e propostas do atendimento.": {
+    es: "Conecta firma electrónica para contratos y propuestas de atención.",
+  },
+  "Conecte assinatura eletrônica para a IA enviar contratos e acompanhar o retorno pelo webhook.": {
+    es: "Conecta firma electrónica para que la IA envíe contratos y siga el retorno por webhook.",
+  },
+  "Não conectada": { es: "No conectada" },
+  "Como a ZapSign entra no atendimento": { es: "Cómo entra ZapSign en la atención" },
+  "O agente usa esta conexão quando uma capacidade ZapSign está ligada no agente.": {
+    es: "El agente usa esta conexión cuando una capacidad ZapSign está activada en el agente.",
+  },
+  "1. O agente cria o documento pela ferramenta ZapSign.": {
+    es: "1. El agente crea el documento con la herramienta ZapSign.",
+  },
+  "2. O documento fica registrado nesta tela com o lead ou contato vinculado.": {
+    es: "2. El documento queda registrado en esta pantalla con el lead o contacto vinculado.",
+  },
+  "3. Quando a ZapSign chama o webhook, o status local é atualizado aqui.": {
+    es: "3. Cuando ZapSign llama al webhook, el estado local se actualiza aquí.",
+  },
+  "Documentos recentes": { es: "Documentos recientes" },
+  "Últimos documentos criados pelo agente, API ou webhook da ZapSign.": {
+    es: "Últimos documentos creados por el agente, la API o el webhook de ZapSign.",
+  },
+  "Nenhum documento ZapSign registrado ainda.": {
+    es: "Aún no hay documentos ZapSign registrados.",
+  },
+  Vínculo: { es: "Vínculo" },
+  "Lead vinculado": { es: "Lead vinculado" },
+  "Contato vinculado": { es: "Contacto vinculado" },
+  "Nenhum token salvo ainda.": { es: "Aún no hay ningún token guardado." },
+  "Token salvo terminando em": { es: "Token guardado terminado en" },
+  "Cole o token ZapSign para salvar a integração.": {
+    es: "Pega el token de ZapSign para guardar la integración.",
+  },
+  "ZapSign salva e testada.": { es: "ZapSign guardada y probada." },
+  "Conexão ZapSign": { es: "Conexión ZapSign" },
+  "Guarde o token de API e copie o webhook para configurar na ZapSign.": {
+    es: "Guarda el token de API y copia el webhook para configurarlo en ZapSign.",
+  },
+  "Teste aprovado": { es: "Prueba aprobada" },
+  "Teste falhou": { es: "La prueba falló" },
+  "Token de API da ZapSign": { es: "Token de API de ZapSign" },
+  "Cole um token novo sempre que quiser trocar ou salvar a configuração.": {
+    es: "Pega un token nuevo siempre que quieras cambiar o guardar la configuración.",
+  },
+  "Ambiente sandbox": { es: "Ambiente sandbox" },
+  "Use sandbox para testar sem enviar documentos reais.": {
+    es: "Usa sandbox para probar sin enviar documentos reales.",
+  },
+  "Header do webhook": { es: "Header del webhook" },
+  "Segredo do webhook": { es: "Secreto del webhook" },
+  "Em branco gera um segredo novo": { es: "En blanco genera un secreto nuevo" },
+  "O segredo aparece uma única vez após salvar. Copie antes de sair da tela.": {
+    es: "El secreto aparece una sola vez después de guardar. Cópialo antes de salir de la pantalla.",
+  },
+  "Testar token ao salvar": { es: "Probar el token al guardar" },
+  "A gravação só continua se a ZapSign aceitar o token.": {
+    es: "El guardado solo continúa si ZapSign acepta el token.",
+  },
+  "Salvar e testar": { es: "Guardar y probar" },
+  "Webhook para cadastrar na ZapSign": { es: "Webhook para registrar en ZapSign" },
+  "Use estes dados no painel da ZapSign para receber mudança de status.": {
+    es: "Usa estos datos en el panel de ZapSign para recibir cambios de estado.",
+  },
+  "Copiar URL do webhook": { es: "Copiar URL del webhook" },
+  "URL do webhook copiada.": { es: "URL del webhook copiada." },
+  "Header enviado pela ZapSign": { es: "Header enviado por ZapSign" },
+  "Copiar header do webhook": { es: "Copiar header del webhook" },
+  "Header do webhook copiado.": { es: "Header del webhook copiado." },
+  "Segredo gerado agora": { es: "Secreto generado ahora" },
+  "Copiar segredo do webhook": { es: "Copiar secreto del webhook" },
+  "Segredo do webhook copiado.": { es: "Secreto del webhook copiado." },
+  "Depois que sair desta tela, o segredo não será mostrado de novo.": {
+    es: "Después de salir de esta pantalla, el secreto no se mostrará de nuevo.",
+  },
+  "Base da API": { es: "Base de la API" },
+  "Último teste": { es: "Última prueba" },
+  "A ZapSign precisa estar conectada antes de criar documentos.": {
+    es: "ZapSign debe estar conectada antes de crear documentos.",
+  },
+  "Documento ZapSign criado.": { es: "Documento ZapSign creado." },
+  "Criar documento de teste": { es: "Crear documento de prueba" },
+  "Envie um PDF ou DOCX por URL para validar a conexão sem esperar a IA.": {
+    es: "Envía un PDF o DOCX por URL para validar la conexión sin esperar a la IA.",
+  },
+  "Nome do documento": { es: "Nombre del documento" },
+  "Contrato de prestação de serviços": { es: "Contrato de prestación de servicios" },
+  "Tipo de arquivo": { es: "Tipo de archivo" },
+  "URL do arquivo": { es: "URL del archivo" },
+  "Nome do signatário": { es: "Nombre del firmante" },
+  "Maria Cliente": { es: "María Cliente" },
+  "E-mail do signatário": { es: "Correo del firmante" },
+  "Data limite para assinar": { es: "Fecha límite para firmar" },
+  Opcional: { es: "Opcional" },
+  "Enviar convite por e-mail": { es: "Enviar invitación por correo" },
+  "A ZapSign dispara o convite para o signatário.": {
+    es: "ZapSign envía la invitación al firmante.",
+  },
+  "Criar documento": { es: "Crear documento" },
+  "A ZapSign ainda não está conectada para esta empresa.": {
+    es: "ZapSign aún no está conectada para esta empresa.",
+  },
+  "Informe uma URL de PDF ou DOCX para criar o documento.": {
+    es: "Indica una URL de PDF o DOCX para crear el documento.",
+  },
+  "Não encontrei esse lead nesta empresa.": {
+    es: "No encontré ese lead en esta empresa.",
+  },
+  "Não encontrei esse contato nesta empresa.": {
+    es: "No encontré ese contacto en esta empresa.",
+  },
+  "O lead informado pertence a outro contato.": {
+    es: "El lead informado pertenece a otro contacto.",
+  },
+  "A ZapSign recusou a criação. Revise o documento e o signatário.": {
+    es: "ZapSign rechazó la creación. Revisa el documento y el firmante.",
+  },
+  "Não foi possível criar o documento ZapSign.": {
+    es: "No se pudo crear el documento ZapSign.",
+  },
+  "Não consegui ler as assinaturas.": { es: "No pude leer las firmas." },
+  "Documento sem nome": { es: "Documento sin nombre" },
+  Assinado: { es: "Firmado" },
+  "Status desconhecido": { es: "Estado desconocido" },
+  "Assinaturas deste negócio": { es: "Firmas de este negocio" },
+  Assinaturas: { es: "Firmas" },
+  "Sem documentos para assinatura.": { es: "Sin documentos para firmar." },
   "Proteção de envio atualizada.": { es: "Protección de envío actualizada." },
   "Proteção de envio —": { es: "Protección de envío —" },
   "Estes limites protegem o número contra bloqueio do WhatsApp. Campo vazio usa o padrão seguro do sistema (mostrado no campo).": {

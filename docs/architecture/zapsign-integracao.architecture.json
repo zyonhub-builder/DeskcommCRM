@@ -14,7 +14,7 @@
     { "id": "provedor", "label": "ZapSign" },
     { "id": "retorno", "label": "Retorno e visibilidade" }
   ],
-  "mainPath": ["modulo", "config", "toolCreate", "apiZap", "webhook", "documentos"],
+  "mainPath": ["modulo", "telaTenant", "config", "toolCreate", "apiZap", "webhook", "documentos", "visibilidadeAtendimento"],
   "nodes": [
     {
       "id": "modulo",
@@ -31,6 +31,22 @@
       "type": "route",
       "label": "POST /api/v1/integrations/zapsign",
       "sublabel": "admin · token cifrado em tenant_integrations · testa antes de salvar"
+    },
+    {
+      "id": "telaTenant",
+      "lane": "tenant",
+      "col": 2,
+      "type": "ui",
+      "label": "/app/integrations/zapsign",
+      "sublabel": "admin da organização · configura token/webhook, cria documento de teste e lista o espelho local"
+    },
+    {
+      "id": "apiManual",
+      "lane": "tenant",
+      "col": 3,
+      "type": "route",
+      "label": "POST /api/v1/integrations/zapsign/documents",
+      "sublabel": "criação manual por URL PDF/DOCX · audit redigido · resposta sem signatários"
     },
     {
       "id": "tenantIntegrations",
@@ -97,6 +113,14 @@
       "sublabel": "tenant-aware · status, vínculo com cliente/negócio e último evento"
     },
     {
+      "id": "visibilidadeAtendimento",
+      "lane": "retorno",
+      "col": 7,
+      "type": "ui",
+      "label": "Inbox e dossiê do lead",
+      "sublabel": "lista status sanitizado no lugar onde o humano acompanha o atendimento"
+    },
+    {
       "id": "audit",
       "lane": "retorno",
       "col": 6,
@@ -106,18 +130,24 @@
     }
   ],
   "edges": [
-    { "id": "e1", "from": "modulo", "to": "config", "label": "abre a rota" },
+    { "id": "e1", "from": "modulo", "to": "telaTenant", "label": "abre a porta no CRM" },
+    { "id": "e1b", "from": "telaTenant", "to": "config", "label": "salva e testa" },
     { "id": "e2", "from": "config", "to": "tenantIntegrations", "label": "salva credencial cifrada" },
     { "id": "e3", "from": "modulo", "to": "catalogo", "label": "oferece capacidades" },
     { "id": "e4", "from": "catalogo", "to": "toolCreate", "label": "capacidade crítica" },
     { "id": "e5", "from": "toolCreate", "to": "tenantIntegrations", "label": "decifra token da org" },
     { "id": "e6", "from": "toolCreate", "to": "apiZap", "label": "cria documento" },
+    { "id": "e6b", "from": "telaTenant", "to": "apiManual", "label": "teste manual" },
+    { "id": "e6c", "from": "apiManual", "to": "apiZap", "label": "cria documento" },
+    { "id": "e6d", "from": "apiManual", "to": "documentos", "label": "espelha criação" },
     { "id": "e7", "from": "apiZap", "to": "webhook", "label": "notifica status" },
     { "id": "e8", "from": "webhook", "to": "arquivoWebhook", "label": "arquiva entrega" },
     { "id": "e9", "from": "webhook", "to": "documentos", "label": "atualiza status" },
     { "id": "e10", "from": "toolCreate", "to": "documentos", "label": "espelha criação" },
     { "id": "e11", "from": "documentos", "to": "toolRead", "label": "consulta do agente" },
+    { "id": "e11b", "from": "documentos", "to": "visibilidadeAtendimento", "label": "mostra status sem PII" },
     { "id": "e12", "from": "config", "to": "audit", "label": "audita configuração" },
-    { "id": "e13", "from": "webhook", "to": "audit", "label": "audita retorno" }
+    { "id": "e13", "from": "webhook", "to": "audit", "label": "audita retorno" },
+    { "id": "e14", "from": "apiManual", "to": "audit", "label": "audita criação manual" }
   ]
 }

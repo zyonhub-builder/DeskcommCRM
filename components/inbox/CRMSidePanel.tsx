@@ -27,6 +27,10 @@ import { ContactTagsEditor } from "./ContactTagsEditor";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import {
+  ListaDeAssinaturasZapsign,
+  type ZapsignDocumentoResumo,
+} from "@/components/zapsign/ListaDeAssinaturasZapsign";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { cn } from "@/lib/utils";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -457,8 +461,9 @@ function CamposDoFunil({
 }
 
 export function CRMSidePanel({ conversation }: Props) {
-  const { user } = useAuth();
+  const { user, activeOrg } = useAuth();
   const readonly = user.support?.access_mode === "support_readonly";
+  const zapsignLigado = activeOrg?.modulos_ligados?.includes("zapsign") === true;
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -467,7 +472,9 @@ export function CRMSidePanel({ conversation }: Props) {
   // A saída do filtro produz null enquanto o detalhe carrega. O rascunho não
   // some nessa lacuna; outra conversa/contato real o descarta, sem expô-lo.
   useEffect(() => {
-    if (conversation && desfechoDraft && (conversation.id !== desfechoDraft.conversationId || contactId !== desfechoDraft.contactId)) setDesfechoDraft(null);
+    if (conversation && desfechoDraft && (conversation.id !== desfechoDraft.conversationId || contactId !== desfechoDraft.contactId)) {
+      queueMicrotask(() => setDesfechoDraft(null));
+    }
   }, [conversation, contactId, desfechoDraft]);
 
 
@@ -477,6 +484,7 @@ export function CRMSidePanel({ conversation }: Props) {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [activities, setActivities] = useState<ActivityRow[] | null>(null);
   const [demandas, setDemandas] = useState<DemandaRow[] | null>(null);
+  const [zapsignDocuments, setZapsignDocuments] = useState<ZapsignDocumentoResumo[] | null>(null);
   const [fatos, setFatos] = useState<Array<{ id: string; headline: string; body: string }>>([]);
   const [historico, setHistorico] = useState<Array<{ id: string; desfecho: string; fechada_em: string }>>([]);
   const [summaryContactId, setSummaryContactId] = useState<string | null>(null);
@@ -497,23 +505,28 @@ export function CRMSidePanel({ conversation }: Props) {
   useEffect(() => {
     if (leadDialogOpen && defaultPipeline.isError) {
       toast.error(t("Nenhum funil configurado nesta organização."));
-      setLeadDialogOpen(false);
+      queueMicrotask(() => setLeadDialogOpen(false));
     }
   }, [leadDialogOpen, defaultPipeline.isError, t]);
 
   useEffect(() => {
     if (!contactId) {
-      setLeads(null);
-      setOrders(null);
-      setActivities(null);
-      setDemandas(null);
-      setFatos([]); setHistorico([]);
-      setLeadAtivoId(null);
+      queueMicrotask(() => {
+        setLeads(null);
+        setOrders(null);
+        setActivities(null);
+        setDemandas(null);
+        setZapsignDocuments(null);
+        setFatos([]); setHistorico([]);
+        setLeadAtivoId(null);
+      });
       return;
     }
     let cancelled = false;
 
-    setErro(false);
+    queueMicrotask(() => {
+      if (!cancelled) setErro(false);
+    });
 
     // Pela ROTA, não pelo cliente de navegador: o cookie de sessão é httpOnly,
     // então o supabase-js do browser não vê a sessão e consultava como `anon`
@@ -528,6 +541,7 @@ export function CRMSidePanel({ conversation }: Props) {
             orders: OrderRow[];
             activities: ActivityRow[];
             demandas: DemandaRow[];
+            zapsign_documents?: ZapsignDocumentoResumo[];
             fatos?: Array<{ id: string; headline: string; body: string }>;
             historico?: Array<{ id: string; desfecho: string; fechada_em: string }>;
           };
@@ -544,6 +558,7 @@ export function CRMSidePanel({ conversation }: Props) {
         // mostraria esqueleto para sempre num contato sem demanda aberta —
         // que é o caso saudável.
         setDemandas(r.data.demandas ?? []);
+        setZapsignDocuments(r.data.zapsign_documents ?? []);
         setFatos(r.data.fatos ?? []); setHistorico(r.data.historico ?? []);
       } catch {
         if (cancelled) return;
@@ -554,6 +569,7 @@ export function CRMSidePanel({ conversation }: Props) {
         setOrders(null);
         setActivities(null);
         setDemandas(null);
+        setZapsignDocuments(null);
         setFatos([]); setHistorico([]);
       }
     }
@@ -594,8 +610,13 @@ export function CRMSidePanel({ conversation }: Props) {
   const sectionsLoading = useMemo(
     () =>
       !erro &&
-      (summaryContactId !== contactId || (leads === null && orders === null && activities === null && demandas === null)),
-    [erro, summaryContactId, contactId, leads, orders, activities, demandas],
+      (summaryContactId !== contactId ||
+        (leads === null &&
+          orders === null &&
+          activities === null &&
+          demandas === null &&
+          (!zapsignLigado || zapsignDocuments === null))),
+    [erro, summaryContactId, contactId, leads, orders, activities, demandas, zapsignLigado, zapsignDocuments],
   );
 
   if (!conversation) {
@@ -753,6 +774,22 @@ export function CRMSidePanel({ conversation }: Props) {
       </section>
 
       <Separator />
+
+      {zapsignLigado ? (
+        <>
+          <section data-testid="inbox-zapsign-documents">
+            <h3 className="text-xs font-semibold text-text">{t("Assinaturas")}</h3>
+            <ListaDeAssinaturasZapsign
+              documentos={zapsignDocuments}
+              loading={sectionsLoading}
+              error={erro}
+              onRetry={recarregar}
+              compacta
+            />
+          </section>
+          <Separator />
+        </>
+      ) : null}
 
       <section data-testid="inbox-memoria">
         <h3 className="text-xs font-semibold">{t("Memória do contato")}</h3>
