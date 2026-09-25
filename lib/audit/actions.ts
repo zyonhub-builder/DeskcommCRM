@@ -45,6 +45,8 @@ export const AUDIT_ACTIONS = [
   "nuvemshop.webhook_invalid_signature",
   "zapsign.connected",
   "zapsign.configuration_failed",
+  "zapsign.document_created",
+  "zapsign.document_create_failed",
   "zapsign.webhook_received",
   "zapsign.webhook_invalid_signature",
   "lead.created",
