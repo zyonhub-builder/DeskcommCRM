@@ -1,14 +1,14 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { POST } from "@/app/api/v1/integrations/zapsign/documents/route";
+import { GET, POST } from "@/app/api/v1/integrations/zapsign/documents/route";
 import { fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
-import { criarDocumentoZapsign } from "@/lib/zapsign/service";
+import { criarDocumentoZapsign, listarDocumentosZapsign } from "@/lib/zapsign/service";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
@@ -18,7 +18,10 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn(async () => true) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({ tag: "admin-db" })) }));
-vi.mock("@/lib/zapsign/service", () => ({ criarDocumentoZapsign: vi.fn() }));
+vi.mock("@/lib/zapsign/service", () => ({
+  criarDocumentoZapsign: vi.fn(),
+  listarDocumentosZapsign: vi.fn(),
+}));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -57,8 +60,28 @@ describe("POST /api/v1/integrations/zapsign/documents", () => {
     } as unknown as Awaited<ReturnType<typeof requireRole>>);
     vi.mocked(criarDocumentoZapsign).mockResolvedValue({
       ok: true,
-      data: { documento: { id: "doc-local-1", token: "token-zapsign" }, resposta_zapsign: {} },
+      data: {
+        documento: {
+          id: "doc-local-1",
+          token: "token-zapsign",
+          name: "Contrato de teste",
+          signers: [{ name: "Maria Cliente", email: "maria@example.com" }],
+        },
+        resposta_zapsign: {},
+      },
     } as unknown as Awaited<ReturnType<typeof criarDocumentoZapsign>>);
+    vi.mocked(listarDocumentosZapsign).mockResolvedValue({
+      documentos: [
+        {
+          id: "doc-local-1",
+          token: "token-zapsign",
+          name: "Contrato de teste",
+          status: "signed",
+          signers: [{ name: "Maria Cliente", email: "maria@example.com" }],
+          provider_payload: { raw: "não deve sair" },
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof listarDocumentosZapsign>>);
   });
 
   it("cria documento na organização autenticada e não aceita org vinda do body", async () => {
@@ -98,6 +121,35 @@ describe("POST /api/v1/integrations/zapsign/documents", () => {
     expect(auditSerializado).not.toContain("Maria Cliente");
     expect(auditSerializado).not.toContain("maria@example.com");
     expect(auditSerializado).not.toContain("arquivos.exemplo");
+  });
+
+  it("lista documentos sem expor signatários nem payload do provedor", async () => {
+    const res = await GET(
+      new NextRequest(
+        "http://localhost/api/v1/integrations/zapsign/documents?contact_id=33333333-3333-4333-8333-333333333333&limite=5",
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(listarDocumentosZapsign).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG,
+        contactId: "33333333-3333-4333-8333-333333333333",
+        limite: 5,
+      }),
+    );
+    const body = await res.json();
+    expect(body.data.documentos[0]).toMatchObject({
+      id: "doc-local-1",
+      token: "token-zapsign",
+      name: "Contrato de teste",
+      status: "signed",
+    });
+    const serializado = JSON.stringify(body);
+    expect(serializado).not.toContain("Maria Cliente");
+    expect(serializado).not.toContain("maria@example.com");
+    expect(serializado).not.toContain("provider_payload");
   });
 
   it("some quando o módulo da instalação está desligado", async () => {

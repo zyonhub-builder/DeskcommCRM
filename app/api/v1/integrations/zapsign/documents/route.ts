@@ -10,7 +10,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { criarDocumentoZapsign } from "@/lib/zapsign/service";
+import { resumoPublicoDocumentoZapsign } from "@/lib/zapsign/public-view";
+import { criarDocumentoZapsign, listarDocumentosZapsign } from "@/lib/zapsign/service";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,15 @@ const entradaSchema = z
     external_id: z.string().trim().min(1).max(128).optional(),
     lead_id: z.string().uuid().optional(),
     contact_id: z.string().uuid().optional(),
+  })
+  .strict();
+
+const filtroSchema = z
+  .object({
+    status: z.string().trim().min(1).max(80).optional(),
+    lead_id: z.string().uuid().optional(),
+    contact_id: z.string().uuid().optional(),
+    limite: z.coerce.number().int().min(1).max(50).default(20),
   })
   .strict();
 
@@ -55,6 +65,42 @@ function mensagemDeRecusa(motivo: string): string {
     default:
       return "Não foi possível criar o documento ZapSign.";
   }
+}
+
+export async function GET(req: NextRequest): Promise<Response> {
+  const requestId = randomUUID();
+  const desligado = await moduloOu404(requestId);
+  if (desligado) return desligado;
+
+  const authz = await requireRole("viewer", { requestId, resource: "zapsign_documents" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  const raw = Object.fromEntries(req.nextUrl.searchParams.entries());
+  const parsed = filtroSchema.safeParse(raw);
+  if (!parsed.success) {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
+      requestId,
+      details: parsed.error.flatten(),
+    });
+  }
+
+  const documentos = await listarDocumentosZapsign(createAdminClient(), {
+    organizationId: authz.org.orgId,
+    status: parsed.data.status,
+    leadId: parsed.data.lead_id,
+    contactId: parsed.data.contact_id,
+    limite: parsed.data.limite,
+  });
+
+  return ok(
+    {
+      documentos: documentos.documentos.map((doc) =>
+        resumoPublicoDocumentoZapsign(doc as Record<string, unknown>),
+      ),
+    },
+    { requestId },
+  );
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -154,5 +200,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     },
   });
 
-  return ok({ documento: resultado.data.documento }, { status: 201, requestId });
+  return ok(
+    { documento: resumoPublicoDocumentoZapsign(resultado.data.documento as Record<string, unknown>) },
+    { status: 201, requestId },
+  );
 }

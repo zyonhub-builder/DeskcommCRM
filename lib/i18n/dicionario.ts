@@ -4536,6 +4536,13 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível criar o documento ZapSign.": {
     es: "No se pudo crear el documento ZapSign.",
   },
+  "Não consegui ler as assinaturas.": { es: "No pude leer las firmas." },
+  "Documento sem nome": { es: "Documento sin nombre" },
+  Assinado: { es: "Firmado" },
+  "Status desconhecido": { es: "Estado desconocido" },
+  "Assinaturas deste negócio": { es: "Firmas de este negocio" },
+  Assinaturas: { es: "Firmas" },
+  "Sem documentos para assinatura.": { es: "Sin documentos para firmar." },
   "Proteção de envio atualizada.": { es: "Protección de envío actualizada." },
   "Proteção de envio —": { es: "Protección de envío —" },
   "Estes limites protegem o número contra bloqueio do WhatsApp. Campo vazio usa o padrão seguro do sistema (mostrado no campo).": {
