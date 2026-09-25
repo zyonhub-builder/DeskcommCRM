@@ -39,7 +39,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
-export const MODULOS_OPCIONAIS = ["banco_externo", "fluxos_atendimento"] as const;
+export const MODULOS_OPCIONAIS = ["banco_externo", "fluxos_atendimento", "zapsign"] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** A linha de cada módulo em `platform_config`. O formato é o da CHECK da 0341. */
@@ -49,6 +49,9 @@ export const CHAVE_DO_MODULO: Record<ModuloOpcional, string> = {
   // a conduzir um roteiro de perguntas no turno — quem não liga não carrega o
   // caminho novo (`lib/agent-engine/agent/roteiro-no-turno.ts`).
   fluxos_atendimento: "MODULO_FLUXOS_DE_ATENDIMENTO",
+  // Integração de assinatura eletrônica: guarda token de provedor e abre envio
+  // externo de documentos. Desligada, a rota e as capacidades somem.
+  zapsign: "MODULO_ZAPSIGN",
 };
 
 const LIGADO = "ligado";

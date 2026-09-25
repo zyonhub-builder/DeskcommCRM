@@ -40,7 +40,10 @@ const CATALOGO = TOOL_CATALOG.map((t) => ({
   name: t.name,
   risco: t.risco,
   pacotes: t.pacotes,
+  modulo: t.modulo,
 }));
+/** O agente que nasce numa instalação fresca não consome vaga de módulo opcional desligado. */
+const CATALOGO_DA_INSTALACAO_PADRAO = CATALOGO.filter((t) => t.modulo === undefined);
 
 /** Pacotes que realmente têm crítica — os únicos onde a reserva muda algo. */
 const COM_CRITICA = [...new Set(CATALOGO.flatMap((c) => c.pacotes as string[]))].filter(
@@ -102,17 +105,25 @@ describe("ligar pacote reserva a vaga das próprias críticas", () => {
     //
     // É por construção que o dono ficava preso: não é o agente dele que era
     // estranho, é que depois do primeiro pacote não havia segundo.
-    const doOnboarding = ligarPacote([], CATALOGO as never, PACOTE_PADRAO_DO_ONBOARDING as never);
+    const doOnboarding = ligarPacote(
+      [],
+      CATALOGO_DA_INSTALACAO_PADRAO as never,
+      PACOTE_PADRAO_DO_ONBOARDING as never,
+    );
     // Controle do instrumento: default vazio faria toda conta abaixo dar zero e
     // o caso ficaria verde por não medir nada.
     expect(doOnboarding.length, "o agente novo não nasce com capacidade nenhuma").toBeGreaterThan(5);
 
-    const outros = [...new Set(CATALOGO.flatMap((c) => c.pacotes as string[]))].filter(
-      (p) => p !== PACOTE_PADRAO_DO_ONBOARDING,
-    );
+    const outros = [
+      ...new Set(CATALOGO_DA_INSTALACAO_PADRAO.flatMap((c) => c.pacotes as string[])),
+    ].filter((p) => p !== PACOTE_PADRAO_DO_ONBOARDING);
     const exigencias = outros.map((p) => ({
       pacote: p,
-      vagas: vagasExigidasPeloPacote(doOnboarding, CATALOGO as never, p as never),
+      vagas: vagasExigidasPeloPacote(
+        doOnboarding,
+        CATALOGO_DA_INSTALACAO_PADRAO as never,
+        p as never,
+      ),
     }));
     const cabem = exigencias.filter((e) => e.vagas <= TETO_TOOLS_POR_AGENTE);
 

@@ -23,8 +23,9 @@
  * catálogo — e o agente do onboarding é justamente quem ninguém revisa depois.
  */
 import { allTools } from "@/lib/mcp/tools";
-import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
+import { TOOL_CATALOG, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import { ligarPacote } from "@/lib/mcp/tools/selecao-por-pacote";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 
 /** O pacote que o primeiro agente recebe ligado. */
 export const PACOTE_PADRAO_DO_ONBOARDING = "vender" as const;
@@ -34,13 +35,17 @@ export const PACOTE_PADRAO_DO_ONBOARDING = "vender" as const;
  * implementação viraria um id gravado em `tool_ids` que nunca monta ferramenta:
  * a tela mostraria a capacidade ligada e o turno não teria a mão.
  */
-export function catalogoComHandler() {
+export function catalogoComHandler(modulosLigados: readonly ModuloOpcional[] = []) {
   const comHandler = new Set(allTools.map((t) => t.name));
-  return TOOL_CATALOG.filter((c) => comHandler.has(c.name));
+  return TOOL_CATALOG.filter(
+    (c) => comHandler.has(c.name) && !deModuloDesligado(c.name, modulosLigados),
+  );
 }
 
-export function capacidadesPadraoDoOnboarding(): string[] {
-  const catalogo = catalogoComHandler();
+export function capacidadesPadraoDoOnboarding(
+  modulosLigados: readonly ModuloOpcional[] = [],
+): string[] {
+  const catalogo = catalogoComHandler(modulosLigados);
   // `ligarPacote` já respeita as duas regras que importam: capacidade de risco
   // crítico nunca entra por pacote, e a ordem é a do catálogo (para o diff de
   // versão do agente ser legível).

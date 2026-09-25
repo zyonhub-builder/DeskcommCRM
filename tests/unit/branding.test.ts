@@ -887,6 +887,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo: "endpoint da API da Nuvemshop/Tiendanube (ordens e catálogo do e-commerce do cliente).",
   },
+  "api.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint oficial de produção da ZapSign. A integração de assinatura eletrônica fala com ele usando o token da própria empresa para criar, listar e consultar documentos; trocar pelo domínio do revendedor faria a assinatura não chegar ao provedor.",
+  },
+  "sandbox.api.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint oficial de sandbox da ZapSign, usado quando a integração está em modo de teste. É destino de chamada do fornecedor, com a credencial da empresa, e precisa continuar explícito para o modo sandbox não virar domínio escondido.",
+  },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",
     motivo:

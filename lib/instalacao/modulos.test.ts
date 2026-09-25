@@ -47,6 +47,9 @@ describe("modulosLigados", () => {
       "banco_externo",
       "fluxos_atendimento",
     ]);
+
+    const soZapSign = [{ chave: "MODULO_ZAPSIGN", valor: "ligado" }];
+    expect(await modulosLigados(banco({ data: soZapSign }).db)).toEqual(["zapsign"]);
   });
 
   it("banco que recusa ou lança = desligado, sem lançar", async () => {
@@ -77,4 +80,3 @@ describe("moduloLigadoComMemo (turno do agente)", () => {
     expect(from).toHaveBeenCalledTimes(2);
   });
 });
-
