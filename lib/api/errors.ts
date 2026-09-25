@@ -135,6 +135,11 @@ export const ApiErrorCodes = {
   external_db_label_em_uso: "external_db_label_em_uso",
   external_db_desativada: "external_db_desativada",
   external_db_sem_chave: "external_db_sem_chave",
+  // ─── ZAPSIGN ───
+  // A integração valida token, cifra credencial e recebe evento externo. Código
+  // próprio porque quem lê precisa diferenciar falha do provedor de validação
+  // comum do formulário.
+  zapsign_error: "zapsign_error",
 
   // ─── CHAMADA DE VOZ (spec 18, migration 0234) ───
   //

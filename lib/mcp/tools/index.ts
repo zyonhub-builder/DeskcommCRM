@@ -88,6 +88,11 @@ import {
   crmCloseDemand,
   crmProposeReactivation,
 } from "./retencao";
+import {
+  crmCreateZapsignDocument,
+  crmGetZapsignDocument,
+  crmListZapsignDocuments,
+} from "./zapsign";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -119,6 +124,8 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmDescribeExternalData,
   crmQueryExternalData,
   crmListPrivacyRequests,
+  crmListZapsignDocuments,
+  crmGetZapsignDocument,
   // read — organizar a operação (W4)
   crmListStages,
   crmListTags,
@@ -162,6 +169,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCancelFollowup,
   crmCloseDemand,
   crmProposeReactivation,
+  crmCreateZapsignDocument,
   crmAddCaseNote,
   crmCloseHumanCase,
   crmResumeAiAttendance,

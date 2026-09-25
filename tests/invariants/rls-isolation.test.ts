@@ -99,6 +99,7 @@ beforeAll(() => {
       v_conv uuid;
       v_pipe uuid;
       v_stage uuid;
+      v_lead uuid;
       v_agent uuid;
       v_version uuid;
       v_case uuid;
@@ -225,6 +226,7 @@ beforeAll(() => {
           insert into public.crm_leads (organization_id, pipeline_id, stage_id, title)
             values (v_org, v_pipe, v_stage, 'RLS invariant lead');
         end if;
+        select id into v_lead from public.crm_leads where organization_id = v_org limit 1;
 
         if not exists (select 1 from public.org_guardrail_layers where organization_id = v_org) then
           insert into public.org_guardrail_layers (organization_id, layer, enabled)
@@ -457,6 +459,17 @@ beforeAll(() => {
                     '\\x00000000000000000000000000000000'::bytea);
         end if;
 
+        -- 0411 — documentos de assinatura eletrônica. Guardam signatários,
+        -- status e payload de provedor; vazar uma linha entrega contrato ou
+        -- proposta do vizinho. A leitura é org-scoped sem gate de papel, então
+        -- o agent semeado aqui é controle positivo legítimo.
+        if not exists (select 1 from public.zapsign_documents where organization_id = v_org) then
+          insert into public.zapsign_documents
+            (organization_id, lead_id, contact_id, external_token, name, status, source)
+            values (v_org, v_lead, v_contact, 'rls-' || replace(v_org::text, '-', ''),
+                    'RLS invariant assinatura', 'pending', 'api');
+        end if;
+
         -- migrations 0374/0375 -- a campanha e quem ela alcancou. A tabela
         -- campaigns NAO entra na lista de TABLES porque nao tem FK para
         -- contacts; as duas que guardam pessoa, sim. channel_session_id e
@@ -616,6 +629,9 @@ export const TABLES = [
   // provar isso pediria um usuário abaixo de admin escrevendo. Fica declarado
   // em vez de parecer coberto.
   "external_db_connections",
+  // migration 0411 — documentos de assinatura eletrônica. Guarda status,
+  // signatários e ponteiros para cliente/negócio, com leitura org-scoped.
+  "zapsign_documents",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

@@ -144,6 +144,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_create_webhook_source: "sem_funil",
   crm_set_webhook_source_active: "sem_funil",
   crm_set_automation_rule_active: "sem_funil",
+  // Documento de assinatura pode nascer vinculado a um negócio. Quando o modelo
+  // informa `lead_id`, o escopo vale; sem vínculo, a barreira é a capacidade
+  // crítica + papel `ai_operator`.
+  crm_create_zapsign_document: "funil_vem_do_lead",
 };
 
 /**

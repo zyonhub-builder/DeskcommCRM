@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Integração ZapSign",
+    "subtitle": "módulo opcional: credencial por organização, criação de documento pela IA e fechamento pelo evento recebido",
+    "output": "zapsign-integracao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "instalacao", "label": "Instalação" },
+    { "id": "tenant", "label": "Organização" },
+    { "id": "agente", "label": "Capacidades da IA" },
+    { "id": "provedor", "label": "ZapSign" },
+    { "id": "retorno", "label": "Retorno e visibilidade" }
+  ],
+  "mainPath": ["modulo", "config", "toolCreate", "apiZap", "webhook", "documentos"],
+  "nodes": [
+    {
+      "id": "modulo",
+      "lane": "instalacao",
+      "col": 1,
+      "type": "config",
+      "label": "Módulo zapsign",
+      "sublabel": "platform_config · desligado por padrão · some do catálogo quando off"
+    },
+    {
+      "id": "config",
+      "lane": "tenant",
+      "col": 2,
+      "type": "route",
+      "label": "POST /api/v1/integrations/zapsign",
+      "sublabel": "admin · token cifrado em tenant_integrations · testa antes de salvar"
+    },
+    {
+      "id": "tenantIntegrations",
+      "lane": "tenant",
+      "col": 3,
+      "type": "table",
+      "label": "tenant_integrations",
+      "sublabel": "provider zapsign · token e segredo do retorno cifrados por organização"
+    },
+    {
+      "id": "catalogo",
+      "lane": "agente",
+      "col": 2,
+      "type": "config",
+      "label": "catalogo/zapsign.ts",
+      "sublabel": "três capacidades · criação crítica exige marcação explícita"
+    },
+    {
+      "id": "toolCreate",
+      "lane": "agente",
+      "col": 3,
+      "type": "tool",
+      "label": "crm_create_zapsign_document",
+      "sublabel": "ai_operator · redige arquivo e signatários no audit · source=mcp"
+    },
+    {
+      "id": "toolRead",
+      "lane": "agente",
+      "col": 4,
+      "type": "tool",
+      "label": "crm_get/list_zapsign_document",
+      "sublabel": "leitura do espelho local; consulta remota opcional sem atualizar"
+    },
+    {
+      "id": "apiZap",
+      "lane": "provedor",
+      "col": 4,
+      "type": "external",
+      "label": "ZapSign API",
+      "sublabel": "cria por modelo ou arquivo; token do documento volta para reconciliação"
+    },
+    {
+      "id": "webhook",
+      "lane": "retorno",
+      "col": 5,
+      "type": "route",
+      "label": "POST /api/v1/webhooks/zapsign/[token]",
+      "sublabel": "path token + header secreto · idempotência por evento"
+    },
+    {
+      "id": "arquivoWebhook",
+      "lane": "retorno",
+      "col": 5,
+      "type": "table",
+      "label": "webhook_events_log",
+      "sublabel": "arquivo forense do evento cru, sem segredo em headers"
+    },
+    {
+      "id": "documentos",
+      "lane": "retorno",
+      "col": 6,
+      "type": "table",
+      "label": "zapsign_documents",
+      "sublabel": "tenant-aware · status, vínculo com cliente/negócio e último evento"
+    },
+    {
+      "id": "audit",
+      "lane": "retorno",
+      "col": 6,
+      "type": "table",
+      "label": "api_audit_log",
+      "sublabel": "configuração, evento recebido e chamadas de capacidade"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "modulo", "to": "config", "label": "abre a rota" },
+    { "id": "e2", "from": "config", "to": "tenantIntegrations", "label": "salva credencial cifrada" },
+    { "id": "e3", "from": "modulo", "to": "catalogo", "label": "oferece capacidades" },
+    { "id": "e4", "from": "catalogo", "to": "toolCreate", "label": "capacidade crítica" },
+    { "id": "e5", "from": "toolCreate", "to": "tenantIntegrations", "label": "decifra token da org" },
+    { "id": "e6", "from": "toolCreate", "to": "apiZap", "label": "cria documento" },
+    { "id": "e7", "from": "apiZap", "to": "webhook", "label": "notifica status" },
+    { "id": "e8", "from": "webhook", "to": "arquivoWebhook", "label": "arquiva entrega" },
+    { "id": "e9", "from": "webhook", "to": "documentos", "label": "atualiza status" },
+    { "id": "e10", "from": "toolCreate", "to": "documentos", "label": "espelha criação" },
+    { "id": "e11", "from": "documentos", "to": "toolRead", "label": "consulta do agente" },
+    { "id": "e12", "from": "config", "to": "audit", "label": "audita configuração" },
+    { "id": "e13", "from": "webhook", "to": "audit", "label": "audita retorno" }
+  ]
+}

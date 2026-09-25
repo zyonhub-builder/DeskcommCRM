@@ -17,7 +17,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
+import { TOOL_CATALOG, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import { allTools } from "@/lib/mcp/tools";
 import { pickToolsFromMcp } from "@/lib/ai/runtime/tools";
 import type { McpAuthResult } from "@/lib/mcp/auth";
@@ -71,17 +71,26 @@ describe("a ponte do turno respeita `apenasHumano`", () => {
 
   it("as demais capacidades continuam chegando (não virou filtro cego)", () => {
     const { ctx, auth } = contexto();
+    const modulosLigados = [] as const;
+    const handoffToolEnabled = false;
     const montadas = pickToolsFromMcp({
       supabase: ctx.supabase,
       ctx,
       auth,
       toolIds: allTools.map((t) => t.name),
-      handoffToolEnabled: false,
+      handoffToolEnabled,
       handoffSignal: { triggered: false },
+      modulosLigados,
     });
     // Controle positivo: se o filtro derrubasse tudo, o teste acima passaria
     // vacuamente e o agente ficaria sem ferramenta nenhuma.
-    expect(Object.keys(montadas).length).toBeGreaterThan(allTools.length - apenasHumano.length - 3);
+    const esperadas = allTools
+      .map((t) => t.name)
+      .filter((name) => !apenasHumano.includes(name))
+      .filter((name) => handoffToolEnabled || name !== "crm_request_human_handoff")
+      .filter((name) => !deModuloDesligado(name, modulosLigados))
+      .sort();
+    expect(Object.keys(montadas).sort()).toEqual(esperadas);
     expect(montadas).toHaveProperty("crm_search_contacts");
   });
 });

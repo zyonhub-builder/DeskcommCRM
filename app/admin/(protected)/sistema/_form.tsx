@@ -197,6 +197,13 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloOpcional; id: string; rotul
     descricao:
       "Ligado, cada empresa pode montar roteiros de perguntas que a IA conduz durante a conversa (nome, CPF, interesse…), e as respostas aparecem na ficha do cliente. Desligado, a tela, o menu e o roteiro no atendimento da IA somem.",
   },
+  {
+    modulo: "zapsign",
+    id: "modulo-zapsign",
+    rotulo: "Assinatura eletrônica",
+    descricao:
+      "Ligado, cada empresa pode conectar a ZapSign para criar contratos e propostas de assinatura pelo atendimento. Isso guarda o token da conta neste servidor e pode enviar convites para fora do sistema. Desligado, a configuração e as capacidades da IA somem.",
+  },
 ];
 
 export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcional[] }) {

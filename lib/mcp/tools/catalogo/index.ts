@@ -24,6 +24,7 @@ import { TOOLS_FUNIL } from "./funil";
 import { TOOLS_GOVERNANCA } from "./governanca";
 import { TOOLS_OPERACAO } from "./operacao";
 import { TOOLS_RETENCAO } from "./retencao";
+import { TOOLS_ZAPSIGN } from "./zapsign";
 import type { McpToolCatalogEntry } from "./tipos";
 
 export type { McpToolCatalogEntry } from "./tipos";
@@ -40,6 +41,7 @@ export const TOOL_CATALOG: ReadonlyArray<McpToolCatalogEntry> = [
   ...TOOLS_DADOS_EXTERNOS,
   ...TOOLS_OPERACAO,
   ...TOOLS_RETENCAO,
+  ...TOOLS_ZAPSIGN,
 ];
 
 /**
