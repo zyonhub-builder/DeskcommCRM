@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Histórico do WhatsApp",
-    "subtitle": "importação temporária em sessão WAHA separada, sem tocar no atendimento",
+    "subtitle": "importação temporária em sessão WAHA separada, com relatório agregado na própria tela",
     "output": "whatsapp-history.html",
     "quality_profile": "standard"
   },
@@ -14,7 +14,7 @@
     { "id": "worker", "label": "Worker" },
     { "id": "persistencia", "label": "Persistência" }
   ],
-  "mainPath": ["tela", "criar", "sessao", "qr", "cron", "overview", "mensagens", "dados", "apagamento"],
+  "mainPath": ["tela", "criar", "sessao", "qr", "cron", "overview", "mensagens", "dados", "relatorio_route", "relatorio"],
   "nodes": [
     {
       "id": "tela",
@@ -97,12 +97,28 @@
       "sublabel": "apaga dados locais e tenta remover a sessão temporária"
     },
     {
+      "id": "relatorio_route",
+      "lane": "api",
+      "col": 9,
+      "type": "route",
+      "label": "POST imports/:id/report",
+      "sublabel": "gera achados agregados sem exportar conteúdo cru"
+    },
+    {
+      "id": "relatorio",
+      "lane": "persistencia",
+      "col": 10,
+      "type": "table",
+      "label": "whatsapp_history_reports",
+      "sublabel": "summary, metrics, findings e limitações; RLS por organização"
+    },
+    {
       "id": "audit",
       "lane": "persistencia",
-      "col": 9,
+      "col": 10,
       "type": "table",
       "label": "api_audit_log",
-      "sublabel": "criar, concluir, falhar, cancelar, expirar e apagar"
+      "sublabel": "criar, conectar, concluir, falhar, cancelar, expirar, apagar e gerar relatório"
     }
   ],
   "edges": [
@@ -121,6 +137,10 @@
     { "id": "e13", "from": "apagamento", "to": "dados", "label": "delete cascade" },
     { "id": "e14", "from": "criar", "to": "audit", "label": "audita início" },
     { "id": "e15", "from": "cron", "to": "audit", "label": "audita desfechos com efeito" },
+    { "id": "e16", "from": "dados", "to": "relatorio_route", "label": "lê sinais agregados" },
+    { "id": "e17", "from": "relatorio_route", "to": "relatorio", "label": "salva relatório" },
+    { "id": "e18", "from": "relatorio", "to": "tela", "label": "exibe achados acionáveis" },
+    { "id": "e19", "from": "relatorio_route", "to": "audit", "label": "audita geração" },
     { "id": "nl1", "from": "dados", "to": "atendimento", "label": "não-ligação: histórico importado não vira atendimento" }
   ]
 }

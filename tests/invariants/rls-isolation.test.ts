@@ -508,6 +508,20 @@ beforeAll(() => {
                     '\\x00'::bytea, 14, 'inbound');
         end if;
 
+        if not exists (select 1 from public.whatsapp_history_reports where organization_id = v_org) then
+          insert into public.whatsapp_history_reports
+            (organization_id, import_id, generated_by, summary, metrics, findings, limitations)
+            values (
+              v_org,
+              v_history_import,
+              case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end,
+              'RLS invariant report',
+              '{"messages_imported":1}'::jsonb,
+              '[{"title":"RLS invariant finding"}]'::jsonb,
+              '["RLS invariant limitation"]'::jsonb
+            );
+        end if;
+
         -- migrations 0374/0375 -- a campanha e quem ela alcancou. A tabela
         -- campaigns NAO entra na lista de TABLES porque nao tem FK para
         -- contacts; as duas que guardam pessoa, sim. channel_session_id e
@@ -677,6 +691,7 @@ export const TABLES = [
   "whatsapp_history_imports",
   "whatsapp_history_chats",
   "whatsapp_history_messages",
+  "whatsapp_history_reports",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

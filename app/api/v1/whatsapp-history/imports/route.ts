@@ -18,6 +18,10 @@ import {
   WHATSAPP_HISTORY_MAX_CHATS_DEFAULT,
   WHATSAPP_HISTORY_MAX_MESSAGES_DEFAULT,
 } from "@/lib/whatsapp-history/session";
+import {
+  loadWhatsappHistoryReportsByImport,
+  type WhatsappHistoryReportRow,
+} from "@/lib/whatsapp-history/report";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +76,7 @@ interface ImportListRow {
   finished_at: string | null;
 }
 
-function serializeImport(row: ImportListRow) {
+function serializeImport(row: ImportListRow, report: WhatsappHistoryReportRow | null = null) {
   return {
     id: row.id,
     status: row.status,
@@ -95,6 +99,7 @@ function serializeImport(row: ImportListRow) {
     updated_at: row.updated_at,
     connected_at: row.connected_at,
     finished_at: row.finished_at,
+    report,
   };
 }
 
@@ -120,7 +125,24 @@ export async function GET(_req: NextRequest): Promise<Response> {
     });
   }
 
-  return ok({ imports: ((data ?? []) as ImportListRow[]).map(serializeImport) }, { requestId });
+  try {
+    const rows = (data ?? []) as ImportListRow[];
+    const reports = await loadWhatsappHistoryReportsByImport(
+      authz.org.orgId,
+      rows.map((row) => row.id),
+      admin,
+    );
+
+    return ok(
+      { imports: rows.map((row) => serializeImport(row, reports.get(row.id) ?? null)) },
+      { requestId },
+    );
+  } catch (reportError) {
+    return fail("database_error", "Não foi possível carregar relatórios.", 500, {
+      requestId,
+      details: reportError instanceof Error ? reportError.message : String(reportError),
+    });
+  }
 }
 
 export async function POST(req: NextRequest): Promise<Response> {

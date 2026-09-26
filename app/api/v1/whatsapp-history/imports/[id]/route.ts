@@ -8,6 +8,10 @@ import { requireRole } from "@/lib/auth/require-role";
 import { getHistoryTransport } from "@/lib/channels/history-transport";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  loadWhatsappHistoryReportsByImport,
+  type WhatsappHistoryReportRow,
+} from "@/lib/whatsapp-history/report";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +39,7 @@ interface ImportDetailRow {
   transport_session_name: string;
 }
 
-function serializeImport(row: ImportDetailRow) {
+function serializeImport(row: ImportDetailRow, report: WhatsappHistoryReportRow | null = null) {
   return {
     id: row.id,
     status: row.status,
@@ -58,6 +62,7 @@ function serializeImport(row: ImportDetailRow) {
     updated_at: row.updated_at,
     connected_at: row.connected_at,
     finished_at: row.finished_at,
+    report,
   };
 }
 
@@ -90,7 +95,8 @@ export async function GET(
   try {
     const row = await loadImport(authz.org.orgId, parsedParams.data.id);
     if (!row) return fail("not_found", "Importação não encontrada.", 404, { requestId });
-    return ok(serializeImport(row), { requestId });
+    const reports = await loadWhatsappHistoryReportsByImport(authz.org.orgId, [row.id]);
+    return ok(serializeImport(row, reports.get(row.id) ?? null), { requestId });
   } catch (error) {
     return fail("database_error", "Não foi possível carregar a importação.", 500, {
       requestId,

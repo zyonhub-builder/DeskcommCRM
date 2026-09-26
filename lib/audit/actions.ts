@@ -56,6 +56,7 @@ export const AUDIT_ACTIONS = [
   "whatsapp_history.import_cancelled",
   "whatsapp_history.import_deleted",
   "whatsapp_history.import_expired",
+  "whatsapp_history.report_generated",
   "lead.created",
   "lead.updated",
   "lead.deleted",

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  BarChart3,
   CheckCircle2,
   Clock3,
   Play,
@@ -41,10 +42,31 @@ interface ImportRow {
   updated_at: string;
   connected_at: string | null;
   finished_at: string | null;
+  report: ReportRow | null;
 }
 
 interface ImportsPayload {
   imports: ImportRow[];
+}
+
+interface ReportFinding {
+  severity: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  metric: string;
+  next_step: string;
+}
+
+interface ReportRow {
+  id: string;
+  report_version: string;
+  summary: string;
+  metrics: Record<string, unknown>;
+  findings: ReportFinding[];
+  limitations: string[];
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
 function statusLabel(status: string, t: (value: string) => string): string {
@@ -75,6 +97,25 @@ function fmtDate(iso: string): string {
   }
 }
 
+function metricNumber(report: ReportRow, key: string): number | null {
+  const value = report.metrics[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function fmtMinutes(value: number | null): string {
+  if (value === null) return "—";
+  if (value < 60) return `${value} min`;
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
+}
+
+function severityClass(severity: ReportFinding["severity"]): string {
+  if (severity === "high") return "border-danger/40 bg-danger-bg text-danger";
+  if (severity === "medium") return "border-warning/40 bg-warning-bg text-warning-fg";
+  return "border-border bg-surface-muted text-muted-foreground";
+}
+
 export function WhatsappHistoryClient({
   canStart,
   transportConfigured,
@@ -89,6 +130,7 @@ export function WhatsappHistoryClient({
   const [fullSyncAck, setFullSyncAck] = useState(false);
   const [maxChats, setMaxChats] = useState(200);
   const [maxMessages, setMaxMessages] = useState(500);
+  const [reportingId, setReportingId] = useState<string | null>(null);
 
   const imports = useQuery({
     queryKey: ["whatsapp-history", "imports"],
@@ -134,6 +176,18 @@ export function WhatsappHistoryClient({
     mutationFn: (id: string) => apiClient.delete(`/api/v1/whatsapp-history/imports/${id}`),
     onSuccess: reload,
     onError: showApiError,
+  });
+
+  const gerarRelatorio = useMutation({
+    mutationFn: (id: string) => apiClient.post(`/api/v1/whatsapp-history/imports/${id}/report`, {}),
+    onMutate: (id) => {
+      setReportingId(id);
+    },
+    onSuccess: reload,
+    onError: showApiError,
+    onSettled: () => {
+      setReportingId(null);
+    },
   });
 
   const {
@@ -353,6 +407,17 @@ export function WhatsappHistoryClient({
                         </p>
                       </div>
                       <div className="flex gap-2">
+                        {row.status === "ready" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => gerarRelatorio.mutate(row.id)}
+                            disabled={gerarRelatorio.isPending && reportingId === row.id}
+                          >
+                            <BarChart3 className="h-4 w-4" aria-hidden />
+                            {row.report ? t("Atualizar relatório") : t("Gerar relatório")}
+                          </Button>
+                        ) : null}
                         {row.status === "qr_pending" || row.status === "importing" ? (
                           <Button
                             variant="outline"
@@ -402,6 +467,8 @@ export function WhatsappHistoryClient({
                         {row.error.message ?? row.error.code}
                       </p>
                     ) : null}
+
+                    {row.report ? <ReportPanel report={row.report} /> : null}
                   </article>
                 );
               })}
@@ -410,6 +477,63 @@ export function WhatsappHistoryClient({
         </Card>
       </div>
     </div>
+  );
+}
+
+function ReportPanel({ report }: { report: ReportRow }) {
+  const t = useT();
+  return (
+    <section className="mt-4 rounded-sm border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{t("Relatório")}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{report.summary}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">{fmtDate(report.generated_at)}</p>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+        <Stat
+          label={t("Sem resposta")}
+          value={String(metricNumber(report, "unanswered_chats") ?? 0)}
+        />
+        <Stat
+          label={t("Sem saída")}
+          value={String(metricNumber(report, "chats_without_outbound") ?? 0)}
+        />
+        <Stat
+          label={t("1ª resposta")}
+          value={fmtMinutes(metricNumber(report, "median_first_response_minutes"))}
+        />
+        <Stat
+          label={t("Fora do horário")}
+          value={`${metricNumber(report, "inbound_outside_business_hours_percent") ?? 0}%`}
+        />
+      </dl>
+
+      {report.findings.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {report.findings.map((finding) => (
+            <div
+              key={`${finding.metric}:${finding.title}`}
+              className={`rounded-sm border p-2 text-sm ${severityClass(finding.severity)}`}
+            >
+              <p className="font-medium">{finding.title}</p>
+              <p className="mt-1">{finding.detail}</p>
+              <p className="mt-1 text-xs">{finding.next_step}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {report.limitations.length > 0 ? (
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+          {report.limitations.map((limitation) => (
+            <li key={limitation}>{limitation}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 
