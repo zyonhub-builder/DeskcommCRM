@@ -41,10 +41,10 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
-import { ambientePermiteResetDeTeste } from "@/lib/lab/ambiente-de-teste";
 
 interface Props {
   contactId: string;
+  podeResetarContatoDeTeste: boolean;
 }
 
 /**
@@ -65,7 +65,7 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-export function ContactDetailClient({ contactId }: Props) {
+export function ContactDetailClient({ contactId, podeResetarContatoDeTeste }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -126,11 +126,11 @@ export function ContactDetailClient({ contactId }: Props) {
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
   // aparecia como "Sem nome" aqui e com o número no inbox.
   const displayName = rotuloDoContato(contact, t);
-  const podeResetarContatoDeTeste =
+  const podeVerResetDeTeste =
     Boolean(isAdmin) &&
     !contact.is_anonymized &&
     user.support?.access_mode !== "support_readonly" &&
-    ambientePermiteResetDeTeste(process.env.NEXT_PUBLIC_APP_URL, process.env.NODE_ENV);
+    podeResetarContatoDeTeste;
 
   // Os quatro níveis que quem opera tráfego lê. O jsonb já os recebia dos dois
   // caminhos de entrada — site e clique-para-WhatsApp — e nenhuma tela o abria.
@@ -253,7 +253,7 @@ export function ContactDetailClient({ contactId }: Props) {
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
-          {podeResetarContatoDeTeste && <TabsTrigger value="lab">{t("Laboratório")}</TabsTrigger>}
+          {podeVerResetDeTeste && <TabsTrigger value="lab">{t("Laboratório")}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -378,7 +378,7 @@ export function ContactDetailClient({ contactId }: Props) {
           </TabsContent>
         )}
 
-        {podeResetarContatoDeTeste && (
+        {podeVerResetDeTeste && (
           <TabsContent value="lab" className="mt-4">
             <ResetContatoDeTeste contactId={contactId} displayName={displayName} />
           </TabsContent>

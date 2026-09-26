@@ -84,7 +84,7 @@ function abrirFicha(sourceMetadata: Record<string, unknown>, source = BASE.sourc
   contato = { ...BASE, source, source_metadata: sourceMetadata };
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const comQuery = (ui: ReactNode) => <QueryClientProvider client={qc}>{ui}</QueryClientProvider>;
-  render(comQuery(<ContactDetailClient contactId="c-1" />));
+  render(comQuery(<ContactDetailClient contactId="c-1" podeResetarContatoDeTeste={false} />));
   // Controle de vacuidade: a ficha renderizou, então um nível ausente abaixo é
   // ausência de verdade, e não tela vazia.
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Joana");
@@ -134,5 +134,19 @@ describe("a ficha do contato mostra a origem da campanha", () => {
       expect(valorDe(nivel), nivel).toBeNull();
     }
     expect(screen.queryByText(FRASE)).toBeNull();
+  });
+});
+
+describe("reset de laboratório na ficha do contato", () => {
+  it("mostra a aba quando o servidor já confirmou que este ambiente permite reset", () => {
+    contato = { ...BASE };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ContactDetailClient contactId="c-1" podeResetarContatoDeTeste />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("tab", { name: "Laboratório" })).toBeInTheDocument();
   });
 });

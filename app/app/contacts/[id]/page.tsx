@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { env } from "@/lib/env";
+import { ambientePermiteResetDeTeste } from "@/lib/lab/ambiente-de-teste";
 import { createClient } from "@/lib/supabase/server";
 import { ContactDetailClient } from "./_client";
 
@@ -26,5 +28,13 @@ export default async function ContactDetailPage({
     .eq("id", id)
     .maybeSingle();
   if (!contact) notFound();
-  return <ContactDetailClient contactId={id} />;
+  return (
+    <ContactDetailClient
+      contactId={id}
+      podeResetarContatoDeTeste={ambientePermiteResetDeTeste(
+        env.NEXT_PUBLIC_APP_URL,
+        env.NODE_ENV,
+      )}
+    />
+  );
 }

@@ -110,7 +110,7 @@ describe("selo 'Cliente' na lista de contatos", () => {
 describe("'Cliente desde' na ficha do contato", () => {
 
   it("desligada: a linha não aparece", () => {
-    render(comQuery(<ContactDetailClient contactId="c-1" />));
+    render(comQuery(<ContactDetailClient contactId="c-1" podeResetarContatoDeTeste={false} />));
     // O controle de vacuidade prende o ELEMENTO, não o texto: a ficha mostra o
     // nome DUAS vezes de propósito — o `<h1>` do cabeçalho e um campo do card
     // de visão geral —, então procurar por texto solto é ambíguo por
@@ -134,7 +134,7 @@ describe("'Cliente desde' na ficha do contato", () => {
 
   it("ligada: a linha aparece com a data", () => {
     ligada = true;
-    render(comQuery(<ContactDetailClient contactId="c-1" />));
+    render(comQuery(<ContactDetailClient contactId="c-1" podeResetarContatoDeTeste={false} />));
     expect(screen.getByText("Cliente desde")).toBeInTheDocument();
     expect(screen.getByText("12/03/2025")).toBeInTheDocument();
   });
@@ -142,7 +142,7 @@ describe("'Cliente desde' na ficha do contato", () => {
 
 describe("nome do perfil do WhatsApp na ficha do contato", () => {
   it("identifica o campo sem expor o rótulo técnico em inglês", () => {
-    render(comQuery(<ContactDetailClient contactId="c-1" />));
+    render(comQuery(<ContactDetailClient contactId="c-1" podeResetarContatoDeTeste={false} />));
     expect(screen.getByText("Nome · WhatsApp")).toBeInTheDocument();
     expect(screen.queryByText("Display name")).toBeNull();
   });
