@@ -13,12 +13,13 @@ import {
   renderWhatsappHistoryReportMarkdown,
   WhatsappHistoryReportError,
 } from "@/lib/whatsapp-history/report";
+import { renderWhatsappHistoryReportPdf } from "@/lib/whatsapp-history/report-pdf";
 
 export const dynamic = "force-dynamic";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 const querySchema = z.object({
-  format: z.enum(["json", "md"]).default("json"),
+  format: z.enum(["json", "md", "pdf"]).default("json"),
 });
 const bodySchema = z.object({
   mode: z.enum(["rules", "ai"]).default("rules"),
@@ -51,7 +52,8 @@ export async function GET(
     ]);
     const report = reports.get(parsedParams.data.id);
     if (!report) return fail("not_found", "Relatório não encontrado.", 404, { requestId });
-    if (parsedQuery.data.format === "md") {
+
+    const auditDownload = (format: "md" | "pdf") =>
       void audit({
         action: "whatsapp_history.export_downloaded",
         actorUserId: authz.user.id,
@@ -62,9 +64,12 @@ export async function GET(
         metadata: {
           import_id: parsedParams.data.id,
           dataset: "ai_report",
-          format: "md",
+          format,
         },
       });
+
+    if (parsedQuery.data.format === "md") {
+      auditDownload("md");
 
       const date = new Date().toISOString().slice(0, 10);
       return new Response(
@@ -79,6 +84,22 @@ export async function GET(
           },
         },
       );
+    }
+    if (parsedQuery.data.format === "pdf") {
+      auditDownload("pdf");
+
+      const date = new Date().toISOString().slice(0, 10);
+      const pdf = await renderWhatsappHistoryReportPdf(report, { importId: parsedParams.data.id });
+      const pdfBody = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
+      return new Response(pdfBody, {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="whatsapp-history-${parsedParams.data.id.slice(0, 8)}-report-${date}.pdf"`,
+          "X-Request-Id": requestId,
+        },
+      });
     }
     return ok(report, { requestId });
   } catch (error) {

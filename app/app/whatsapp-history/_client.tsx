@@ -8,7 +8,6 @@ import {
   BarChart3,
   CheckCircle2,
   Clock3,
-  Download,
   FileSpreadsheet,
   FileText,
   Play,
@@ -510,7 +509,7 @@ export function WhatsappHistoryClient({
             onClick={() => criar.mutate()}
           >
             <Play className="h-4 w-4" aria-hidden />
-            {criar.isPending ? t("Criando…") : t("Iniciar")}
+            {criar.isPending ? t("Criando…") : t("Iniciar importação")}
           </Button>
         </div>
       </Card>
@@ -578,7 +577,7 @@ export function WhatsappHistoryClient({
                 onClick={restaurarPromptDefault}
                 disabled={!canEditAnalysis || analysisSettings.isLoading}
               >
-                {t("Restaurar prompt")}
+                {t("Restaurar prompt padrão")}
               </Button>
               <Button
                 type="button"
@@ -587,7 +586,7 @@ export function WhatsappHistoryClient({
                 disabled={!canSaveAnalysis || salvarAnalise.isPending}
               >
                 <Save className="h-4 w-4" aria-hidden />
-                {salvarAnalise.isPending ? t("Salvando…") : t("Salvar análise")}
+                {salvarAnalise.isPending ? t("Salvando…") : t("Salvar configuração")}
               </Button>
             </div>
           </div>
@@ -731,26 +730,16 @@ export function WhatsappHistoryClient({
                               disabled={gerarRelatorio.isPending && reportingId === row.id}
                             >
                               <BarChart3 className="h-4 w-4" aria-hidden />
-                              {row.report ? t("Atualizar regras") : t("Relatório por regras")}
+                              {row.report ? t("Atualizar sem IA") : t("Gerar sem IA")}
                             </Button>
                             <Button variant="outline" size="sm" asChild>
                               <a
                                 href={`/api/v1/whatsapp-history/imports/${row.id}/export?dataset=complete&format=xlsx`}
                               >
                                 <FileSpreadsheet className="h-4 w-4" aria-hidden />
-                                {t("XLSX completo")}
+                                {t("Baixar conversas")}
                               </a>
                             </Button>
-                            {row.report ? (
-                              <Button variant="outline" size="sm" asChild>
-                                <a
-                                  href={`/api/v1/whatsapp-history/imports/${row.id}/report?format=md`}
-                                >
-                                  <Download className="h-4 w-4" aria-hidden />
-                                  {t("Relatório")}
-                                </a>
-                              </Button>
-                            ) : null}
                           </>
                         ) : null}
                         {row.status === "qr_pending" || row.status === "importing" ? (
@@ -824,7 +813,11 @@ export function WhatsappHistoryClient({
                           disabled={!aiConsent || aiBusy}
                         >
                           <Sparkles className="h-4 w-4" aria-hidden />
-                          {aiBusy ? t("Analisando…") : t("Analisar com IA")}
+                          {aiBusy
+                            ? t("Gerando análise…")
+                            : row.report?.metrics.ai_used === true
+                              ? t("Atualizar com IA")
+                              : t("Gerar com IA")}
                         </Button>
                       </div>
                     ) : null}
@@ -858,23 +851,21 @@ function ReportPanel({ importId, report }: { importId: string; report: ReportRow
         <div>
           <h3 className="flex items-center gap-2 text-sm font-semibold">
             {aiUsed ? <Sparkles className="h-4 w-4 text-accent" aria-hidden /> : null}
-            {aiUsed ? t("Relatório com IA") : t("Relatório por regras")}
+            {aiUsed ? t("Relatório com IA") : t("Relatório sem IA")}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">{report.summary}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {aiUsed
               ? t("Amostra textual sanitizada, métricas automáticas e diagnóstico de IA.")
-              : t(
-                  "Análise por regras e métricas; não usa IA nem interpreta o texto das mensagens.",
-                )}
+              : t("Análise por métricas; não usa IA nem interpreta o texto das mensagens.")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs text-muted-foreground">{fmtDate(report.generated_at)}</p>
           <Button variant="outline" size="sm" asChild>
-            <a href={`/api/v1/whatsapp-history/imports/${importId}/report?format=md`}>
+            <a href={`/api/v1/whatsapp-history/imports/${importId}/report?format=pdf`}>
               <FileText className="h-4 w-4" aria-hidden />
-              {t("Baixar")}
+              {t("Baixar relatório PDF")}
             </a>
           </Button>
         </div>
