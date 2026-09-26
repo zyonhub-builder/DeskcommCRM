@@ -72,6 +72,9 @@ export const AUDIT_ACTIONS = [
   "lead.imported",
   "contact.created",
   "contact.updated",
+  // Reset operacional de laboratório: apaga o grafo de atendimento de UM contato
+  // para repetir uma prova de conceito sem trocar o número. Não substitui LGPD.
+  "contact.test_reset",
   "contacts.imported",
   "contact.anonymized",
   "contact.merge_pending",
