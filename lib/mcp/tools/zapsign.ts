@@ -134,7 +134,10 @@ const criarInputShape = {
   lang: z.enum(["pt-br", "en", "es"]).optional(),
   external_id: z.string().trim().min(1).max(128).optional(),
   folder_path: z.string().trim().min(1).max(255).optional(),
-  date_limit_to_sign: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  date_limit_to_sign: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   signers: z.array(signatarioSchema).max(20).optional(),
   lead_id: uuidOpcional,
   contact_id: uuidOpcional,
@@ -149,8 +152,12 @@ export const crmCreateZapsignDocument: McpToolDefinition<typeof criarInputShape>
     "proposta ou termo. Prefira vincular `lead_id` ou `contact_id` para a assinatura aparecer no " +
     "histórico certo. Se `signers` ou `raw_options` ativarem envio automático por e-mail ou WhatsApp, " +
     "só chame com `confirmou_envio_externo: true` depois de confirmar que a criação pode disparar " +
-    "convite fora do CRM. Para modelo, informe `template_id`; para arquivo, informe exatamente um " +
-    "entre `url_pdf`, `url_docx` e `base64_pdf`. Não invente dados de signatário.",
+    "convite fora do CRM. Quando a pessoa autorizar envio por e-mail, inclua no primeiro item de " +
+    "`signers` os campos `name`, `email` e `send_automatic_email: true`, além de " +
+    "`confirmou_envio_externo: true`. Para modelo, informe `template_id`; para arquivo, informe " +
+    "exatamente um entre `url_pdf`, `url_docx` e `base64_pdf`. Não invente dados de signatário. " +
+    "Se a resposta vier com `criado: false`, não diga que enviou nem que vai confirmar: explique " +
+    "que a criação falhou e siga a mensagem de recusa.",
   inputSchema: criarInputShape,
   category: "write",
   requiresRole: "ai_operator",
@@ -158,7 +165,8 @@ export const crmCreateZapsignDocument: McpToolDefinition<typeof criarInputShape>
   redigirParaAuditoria: redigirCriacaoZapsignParaAuditoria,
   motivoDoVazio: motivoDaCriacao,
   handler: async (input, ctx) => {
-    const disparaEnvio = contemEnvioAutomatico(input.signers) || contemEnvioAutomatico(input.raw_options);
+    const disparaEnvio =
+      contemEnvioAutomatico(input.signers) || contemEnvioAutomatico(input.raw_options);
     if (disparaEnvio && !input.confirmou_envio_externo) {
       return {
         criado: false,

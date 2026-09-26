@@ -368,6 +368,66 @@ function templateDataParaZapSign(
   return Object.entries(data).map(([de, para]) => ({ de, para }));
 }
 
+function objetoRecord(valor: unknown): Record<string, unknown> | null {
+  return valor && typeof valor === "object" && !Array.isArray(valor)
+    ? (valor as Record<string, unknown>)
+    : null;
+}
+
+function stringDe(obj: Record<string, unknown>, chaves: readonly string[]): string | undefined {
+  for (const chave of chaves) {
+    const valor = obj[chave];
+    if (typeof valor === "string" && valor.trim().length > 0) return valor.trim();
+  }
+  return undefined;
+}
+
+function valorDe(obj: Record<string, unknown>, chaves: readonly string[]): unknown {
+  for (const chave of chaves) {
+    if (obj[chave] !== undefined) return obj[chave];
+  }
+  return undefined;
+}
+
+function signatarioDoModelo(signers: unknown[] | undefined): Record<string, unknown> {
+  const primeiro = objetoRecord(signers?.[0]);
+  if (!primeiro) return {};
+  return {
+    ...(stringDe(primeiro, ["signer_name", "name", "nome"])
+      ? { signer_name: stringDe(primeiro, ["signer_name", "name", "nome"]) }
+      : {}),
+    ...(stringDe(primeiro, ["signer_email", "email"])
+      ? { signer_email: stringDe(primeiro, ["signer_email", "email"]) }
+      : {}),
+    ...(stringDe(primeiro, ["signer_phone_country", "phone_country", "telefone_pais"])
+      ? {
+          signer_phone_country: stringDe(primeiro, [
+            "signer_phone_country",
+            "phone_country",
+            "telefone_pais",
+          ]),
+        }
+      : {}),
+    ...(stringDe(primeiro, ["signer_phone_number", "phone_number", "phone", "telefone", "whatsapp"])
+      ? {
+          signer_phone_number: stringDe(primeiro, [
+            "signer_phone_number",
+            "phone_number",
+            "phone",
+            "telefone",
+            "whatsapp",
+          ]),
+        }
+      : {}),
+    ...(valorDe(primeiro, ["send_automatic_email"]) !== undefined
+      ? { send_automatic_email: valorDe(primeiro, ["send_automatic_email"]) }
+      : {}),
+    ...(valorDe(primeiro, ["send_automatic_whatsapp"]) !== undefined
+      ? { send_automatic_whatsapp: valorDe(primeiro, ["send_automatic_whatsapp"]) }
+      : {}),
+  };
+}
+
 function montarPayloadCriacao(
   input: CriarDocumentoZapsignInput,
 ): Resultado<Record<string, unknown>> {
@@ -384,10 +444,13 @@ function montarPayloadCriacao(
   if (input.modo === "modelo") {
     if (!input.templateId) return { ok: false, erro: "template_id_required", status: 422 };
     const templateData = templateDataParaZapSign(input.templateData);
+    const comumDoModelo = { ...comum };
+    delete comumDoModelo.signers;
     return {
       ok: true,
       data: {
-        ...comum,
+        ...comumDoModelo,
+        ...signatarioDoModelo(input.signers),
         template_id: input.templateId,
         ...(templateData ? { data: templateData } : {}),
       },
