@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const MIGRATION = "supabase/migrations/20260925130000_0411_zapsign_integracao.sql";
+const ORIGIN_MIGRATION =
+  "supabase/migrations/20260926200000_0414_zapsign_assinatura_preserva_origem.sql";
 
 describe("schema ZapSign", () => {
   it("migration e baseline carregam provider, tabela e FKs compostas por organização", () => {
@@ -21,6 +23,26 @@ describe("schema ZapSign", () => {
       expect(sql).toContain("foreign key (organization_id, contact_id)");
       expect(sql).toContain("alter table public.zapsign_documents enable row level security");
       expect(sql).toContain("grant select, insert, update, delete on public.zapsign_documents to authenticated");
+    }
+  });
+
+  it("contrato assinado preserva a origem do atendimento para automações com WhatsApp", () => {
+    const migration = readFileSync(ORIGIN_MIGRATION, "utf8");
+    const baseline = readFileSync("supabase/baseline.sql", "utf8");
+
+    for (const sql of [migration, baseline]) {
+      expect(sql).toContain(
+        "p_event_type='zapsign.document_signed' and p_entity_kind='zapsign_document'",
+      );
+      expect(sql).toContain(
+        "e.event_type='zapsign.document_signed' and e.entity_kind='zapsign_document'",
+      );
+      expect(sql).toContain("from public.zapsign_documents d");
+      expect(sql).toContain("public.fn_service_observe_command(v_org_id, v_contact)");
+      expect(sql).toContain(
+        "public.fn_service_observe_command(e.organization_id, coalesce(d.contact_id,l.contact_id))",
+      );
+      expect(sql).toContain("not (coalesce(e.payload, '{}'::jsonb) ? 'service_origin')");
     }
   });
 });
