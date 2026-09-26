@@ -40,6 +40,7 @@ import {
   UserCircle,
   Users,
   UsersThree,
+  WhatsappLogo,
   WebhooksLogo,
 } from "@/lib/ui/icons";
 
@@ -94,6 +95,7 @@ const ICONS = {
   UserCircle,
   Users,
   UsersThree,
+  WhatsappLogo,
   WebhooksLogo,
 };
 export interface NavDestination extends Omit<NavMetadata, "icon"> {

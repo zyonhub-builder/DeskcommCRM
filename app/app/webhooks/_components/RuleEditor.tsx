@@ -115,6 +115,11 @@ const AGENDAMENTO_FIELDS: CuratedField[] = [
   { value: "event.event_type_name", label: "Tipo de atendimento", op: "contains" },
   { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
 ];
+const ZAPSIGN_FIELDS: CuratedField[] = [
+  { value: "zapsign_document.status", label: "Status do documento", op: "eq" },
+  { value: "zapsign_document.name", label: "Nome do documento", op: "contains" },
+  { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+];
 
 // ponytail: etapa de destino usa o funil default (cobre o caso comum de 1
 // funil); se o produto ganhar múltiplos funis relevantes aqui, trocar por um
@@ -129,6 +134,7 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "appointment.confirmed": AGENDAMENTO_FIELDS,
   "appointment.rescheduled": AGENDAMENTO_FIELDS,
   "appointment.cancelled": AGENDAMENTO_FIELDS,
+  "zapsign.document_signed": ZAPSIGN_FIELDS,
   // O aniversário não tem campo próprio para filtrar: o que a organização quer
   // decidir é sobre QUEM faz aniversário, e não sobre a data. Por isso os campos
   // são os do contato — "só quem tem a tag cliente", tipicamente.

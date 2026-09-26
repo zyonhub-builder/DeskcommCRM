@@ -1,7 +1,12 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { ZapSignApiError, ZapSignClient, type ZapSignDocumentSummary, zapsignBaseUrl } from "./client";
+import {
+  ZapSignApiError,
+  ZapSignClient,
+  type ZapSignDocumentSummary,
+  zapsignBaseUrl,
+} from "./client";
 
 export const ZAPSIGN_PROVIDER = "zapsign";
 export const ZAPSIGN_DEFAULT_WEBHOOK_HEADER = "X-ZapSign-Webhook-Secret";
@@ -27,6 +32,15 @@ export type IntegrationRow = {
 };
 
 type Resultado<T> = { ok: true; data: T } | { ok: false; erro: string; status?: number };
+
+export type AplicacaoWebhookZapsign = {
+  document_token: string | null;
+  document_id: string | null;
+  lead_id: string | null;
+  contact_id: string | null;
+  status: string | null;
+  signed_now: boolean;
+};
 
 export type ZapsignIntegrationPublica = {
   connected: boolean;
@@ -84,8 +98,12 @@ type CredencialZapsign = {
   baseUrl: string;
 };
 
-function metadata(row: Pick<IntegrationRow, "store_metadata"> | null | undefined): Record<string, unknown> {
-  return row?.store_metadata && typeof row.store_metadata === "object" && !Array.isArray(row.store_metadata)
+function metadata(
+  row: Pick<IntegrationRow, "store_metadata"> | null | undefined,
+): Record<string, unknown> {
+  return row?.store_metadata &&
+    typeof row.store_metadata === "object" &&
+    !Array.isArray(row.store_metadata)
     ? row.store_metadata
     : {};
 }
@@ -350,7 +368,9 @@ function templateDataParaZapSign(
   return Object.entries(data).map(([de, para]) => ({ de, para }));
 }
 
-function montarPayloadCriacao(input: CriarDocumentoZapsignInput): Resultado<Record<string, unknown>> {
+function montarPayloadCriacao(
+  input: CriarDocumentoZapsignInput,
+): Resultado<Record<string, unknown>> {
   const comum: Record<string, unknown> = {
     ...(input.rawOptions ?? {}),
     ...(input.nome ? { name: input.nome } : {}),
@@ -411,7 +431,12 @@ function documentoLocal(row: Record<string, unknown>) {
 export async function criarDocumentoZapsign(
   db: SupabaseClient,
   input: CriarDocumentoZapsignInput,
-): Promise<Resultado<{ documento: ReturnType<typeof documentoLocal>; resposta_zapsign: ZapSignDocumentSummary }>> {
+): Promise<
+  Resultado<{
+    documento: ReturnType<typeof documentoLocal>;
+    resposta_zapsign: ZapSignDocumentSummary;
+  }>
+> {
   const cred = await carregarCredencialZapsign(db, input.organizationId);
   if (!cred.ok) return cred;
 
@@ -454,9 +479,7 @@ export async function criarDocumentoZapsign(
     external_token: token,
     external_open_id: resposta.open_id === undefined ? null : String(resposta.open_id),
     external_id:
-      typeof resposta.external_id === "string"
-        ? resposta.external_id
-        : (input.externalId ?? null),
+      typeof resposta.external_id === "string" ? resposta.external_id : (input.externalId ?? null),
     name: typeof resposta.name === "string" ? resposta.name : (input.nome ?? token),
     status: typeof resposta.status === "string" ? resposta.status : "pending",
     source: input.source,
@@ -475,7 +498,10 @@ export async function criarDocumentoZapsign(
 
   return {
     ok: true,
-    data: { documento: documentoLocal(data as Record<string, unknown>), resposta_zapsign: resposta },
+    data: {
+      documento: documentoLocal(data as Record<string, unknown>),
+      resposta_zapsign: resposta,
+    },
   };
 }
 
@@ -510,7 +536,9 @@ export async function obterDocumentoZapsign(
     token: string;
     consultarRemoto?: boolean;
   },
-): Promise<Resultado<{ local: ReturnType<typeof documentoLocal> | null; remoto?: ZapSignDocumentSummary }>> {
+): Promise<
+  Resultado<{ local: ReturnType<typeof documentoLocal> | null; remoto?: ZapSignDocumentSummary }>
+> {
   const { data, error } = await db
     .from("zapsign_documents")
     .select("*")
@@ -530,7 +558,8 @@ export async function obterDocumentoZapsign(
         sandbox: cred.data.sandbox,
       }).getDocument(input.token);
     } catch (e) {
-      if (e instanceof ZapSignApiError) return { ok: false, erro: "zapsign_api_error", status: e.status };
+      if (e instanceof ZapSignApiError)
+        return { ok: false, erro: "zapsign_api_error", status: e.status };
       return { ok: false, erro: "zapsign_request_failed", status: 502 };
     }
   }
@@ -578,9 +607,32 @@ export async function aplicarWebhookZapsign(
     eventType: string;
     payload: Record<string, unknown>;
   },
-): Promise<Resultado<{ document_token: string | null }>> {
+): Promise<Resultado<AplicacaoWebhookZapsign>> {
   const token = tokenDoPayloadWebhook(input.payload);
-  if (!token) return { ok: true, data: { document_token: null } };
+  if (!token) {
+    return {
+      ok: true,
+      data: {
+        document_token: null,
+        document_id: null,
+        lead_id: null,
+        contact_id: null,
+        status: null,
+        signed_now: false,
+      },
+    };
+  }
+
+  const { data: anterior, error: erroAnterior } = await db
+    .from("zapsign_documents")
+    .select("id, status, signed_at, lead_id, contact_id")
+    .eq("organization_id", input.integration.organization_id)
+    .eq("external_token", token)
+    .maybeSingle();
+  if (erroAnterior) return { ok: false, erro: "zapsign_webhook_lookup_failed", status: 500 };
+  const jaEstavaAssinado =
+    (anterior as { status?: string | null; signed_at?: string | null } | null)?.status ===
+      "signed" || Boolean((anterior as { signed_at?: string | null } | null)?.signed_at);
 
   const agora = new Date().toISOString();
   const status = statusPorEventoZapsign(input.eventType, input.payload);
@@ -602,11 +654,29 @@ export async function aplicarWebhookZapsign(
   if (input.eventType === "doc_refused") patch.refused_at = agora;
   if (input.eventType === "doc_expired") patch.expired_at = agora;
 
-  const { error } = await db
+  const { data, error } = await db
     .from("zapsign_documents")
-    .upsert(patch, { onConflict: "organization_id,external_token" });
+    .upsert(patch, { onConflict: "organization_id,external_token" })
+    .select("id, status, signed_at, lead_id, contact_id")
+    .single();
   if (error) return { ok: false, erro: "zapsign_webhook_persist_failed", status: 500 };
-  return { ok: true, data: { document_token: token } };
+  const documento = data as {
+    id: string;
+    status: string | null;
+    lead_id: string | null;
+    contact_id: string | null;
+  };
+  return {
+    ok: true,
+    data: {
+      document_token: token,
+      document_id: documento.id,
+      lead_id: documento.lead_id,
+      contact_id: documento.contact_id,
+      status: documento.status,
+      signed_now: input.eventType === "doc_signed" && !jaEstavaAssinado,
+    },
+  };
 }
 
 export async function buscarIntegracaoPorWebhookToken(

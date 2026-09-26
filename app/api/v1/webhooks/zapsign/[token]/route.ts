@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ZAPSIGN_DOCUMENT_ENTITY_KIND, ZAPSIGN_DOCUMENT_SIGNED_EVENT } from "@/lib/zapsign/events";
 import {
   ZAPSIGN_PROVIDER,
   aplicarWebhookZapsign,
@@ -24,7 +25,12 @@ interface RouteCtx {
 }
 
 const paramsSchema = z.object({
-  token: z.string().trim().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/),
+  token: z
+    .string()
+    .trim()
+    .min(16)
+    .max(128)
+    .regex(/^[A-Za-z0-9_-]+$/),
 });
 const payloadSchema = z.record(z.string(), z.unknown());
 
@@ -154,6 +160,39 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   });
   if (!applied.ok) {
     return fail("internal_error", applied.erro, applied.status ?? 500, { requestId });
+  }
+
+  if (applied.data.signed_now && applied.data.document_id) {
+    const { error: eventError } = await db.rpc(
+      "emit_event" as never,
+      {
+        p_event_type: ZAPSIGN_DOCUMENT_SIGNED_EVENT,
+        p_entity_kind: ZAPSIGN_DOCUMENT_ENTITY_KIND,
+        p_entity_id: applied.data.document_id,
+        p_payload: {
+          document_id: applied.data.document_id,
+          document_token: applied.data.document_token,
+          lead_id: applied.data.lead_id,
+          contact_id: applied.data.contact_id,
+          status: applied.data.status,
+          provider_event_type: eventType,
+        },
+        p_metadata: {
+          provider: ZAPSIGN_PROVIDER,
+          external_id: ext,
+          request_id: requestId,
+        },
+        p_organization_id: integration.organization_id,
+      } as never,
+    );
+    if (eventError) {
+      logger.error("zapsign webhook: falha ao emitir evento interno", {
+        organization_id: integration.organization_id,
+        document_id: applied.data.document_id,
+        event_type: ZAPSIGN_DOCUMENT_SIGNED_EVENT,
+        error: (eventError as { message?: string }).message ?? String(eventError),
+      });
+    }
   }
 
   await audit({

@@ -82,6 +82,9 @@ export const TETO_PADRAO_MS = 15_000;
  */
 export const TETO_DE_MIDIA_MS = 30_000;
 
+/** Histórico pode listar centenas de chats; continua sem mídia, mas precisa de folga. */
+export const TETO_DE_HISTORICO_MS = 30_000;
+
 /**
  * O ERRO DIZ O STATUS. NUNCA O CORPO QUE O WAHA DEVOLVEU.
  *
@@ -137,6 +140,15 @@ const sessionSnapshotSchema = z.object({
 
 export type WahaSessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 type SessionOperation = "create" | "start" | "stop" | "logout" | "delete";
+
+export interface WahaHistorySessionOptions {
+  fullSync?: boolean;
+}
+
+export interface WahaHistoryMessagesParams {
+  limit: number;
+  offset: number;
+}
 
 /** Mantém o prefixo/status que checkHealth e os callers já classificam. */
 export class WahaSessionError extends Error {
@@ -239,6 +251,21 @@ export class WahaClient {
       !(key in ignore) || (ignore as Record<string, unknown>)[key] === value);
   }
 
+  private async compatibleHistorySession(
+    session: WahaSessionSnapshot,
+    options: WahaHistorySessionOptions,
+  ): Promise<boolean> {
+    if (!(await this.compatibleSession(session))) return false;
+    const noweb = session.config?.noweb;
+    if (!noweb || typeof noweb !== "object" || Array.isArray(noweb)) return false;
+    const store = (noweb as Record<string, unknown>).store;
+    if (!store || typeof store !== "object" || Array.isArray(store)) return false;
+    const storeRecord = store as Record<string, unknown>;
+    if (storeRecord.enabled !== true) return false;
+    if (options.fullSync === true && storeRecord.fullSync !== true) return false;
+    return true;
+  }
+
   /** Porta granular para a futura reserva: created nunca significa ownership. */
   async createSession(name: string): Promise<{ created: boolean; session: WahaSessionSnapshot }> {
     const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions`, {
@@ -253,6 +280,44 @@ export class WahaClient {
     if (!res.ok && res.status !== 422) throw new WahaSessionError("create", res.status);
     const session = await this.sessionAfter(name, "create", res.status);
     if (!session || !(await this.compatibleSession(session))) throw new WahaSessionError("create", res.status);
+    return { created: res.ok, session };
+  }
+
+  /**
+   * Sessão descartável para importar histórico.
+   *
+   * Não reaproveita `createSession`: a sessão de atendimento deve continuar
+   * barata e filtrada; a de histórico precisa nascer com o STORE do NOWEB
+   * ligado ANTES do QR, senão o WAHA não mantém o banco local que permite ler
+   * chats/mensagens antigas. `fullSync` segue desligado por padrão e só entra
+   * quando o caller passa a opção explícita.
+   */
+  async createHistorySession(
+    name: string,
+    options: WahaHistorySessionOptions = {},
+  ): Promise<{ created: boolean; session: WahaSessionSnapshot }> {
+    const config = {
+      ignore: CONVERSAS_IGNORADAS,
+      noweb: {
+        store: {
+          enabled: true,
+          ...(options.fullSync === true ? { fullSync: true } : {}),
+        },
+      },
+    };
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, start: false, config }),
+    }, TETO_DE_HISTORICO_MS);
+    if (!res.ok && !knownSessionConflict(await res.json().catch(() => null), res.status, "create", name)) {
+      throw new WahaSessionError("create", res.status);
+    }
+    if (!res.ok && res.status !== 422) throw new WahaSessionError("create", res.status);
+    const session = await this.sessionAfter(name, "create", res.status);
+    if (!session || !(await this.compatibleHistorySession(session, options))) {
+      throw new WahaSessionError("create", res.status);
+    }
     return { created: res.ok, session };
   }
 
@@ -281,6 +346,17 @@ export class WahaClient {
       throw new WahaSessionError("start", res.status);
     }
     return session;
+  }
+
+  async startHistorySession(
+    name: string,
+    options: WahaHistorySessionOptions = {},
+  ): Promise<WahaSessionSnapshot> {
+    const creation = await this.createHistorySession(name, options);
+    if (!creation.created && !(await this.compatibleHistorySession(creation.session, options))) {
+      throw new WahaSessionError("create", 409);
+    }
+    return this.startExistingSession(name);
   }
 
   private async finishSession(name: string, operation: "stop" | "logout" | "delete"): Promise<void> {
@@ -405,6 +481,36 @@ export class WahaClient {
     });
     if (!res.ok) throw new Error(`waha_${res.status}`);
     return (await res.json()) as { qr?: string; status: string };
+  }
+
+  async getChatsOverview(session: string): Promise<unknown> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/overview`,
+      { headers: { "X-Api-Key": this.apiKey } },
+      TETO_DE_HISTORICO_MS,
+    );
+    if (!res.ok) throw new Error(`waha_history_chats_${res.status}`);
+    return res.json();
+  }
+
+  async getChatMessages(
+    session: string,
+    chatId: string,
+    params: WahaHistoryMessagesParams,
+  ): Promise<unknown> {
+    const url = new URL(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages`,
+    );
+    url.searchParams.set("limit", String(params.limit));
+    url.searchParams.set("offset", String(params.offset));
+    url.searchParams.set("downloadMedia", "false");
+    const res = await this.fetchComTeto(
+      url,
+      { headers: { "X-Api-Key": this.apiKey } },
+      TETO_DE_HISTORICO_MS,
+    );
+    if (!res.ok) throw new Error(`waha_history_messages_${res.status}`);
+    return res.json();
   }
 
   /**

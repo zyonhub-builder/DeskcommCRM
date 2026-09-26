@@ -711,6 +711,17 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Histórico operacional importado para análise deliberada; fica no mesmo
+    // canto do Audit Log, não em Conexões, porque não é canal de atendimento.
+    href: "/app/whatsapp-history",
+    label: "Histórico do WhatsApp",
+    description: "Importações temporárias para analisar conversas antigas sem tocar no atendimento.",
+    icon: "WhatsappLogo",
+    group: "analise",
+    section: "O histórico que se consulta",
+    minRole: "manager",
+  },
+  {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.
     href: "/app/ai/evolution",
     label: "Evolução da IA",
