@@ -8,6 +8,7 @@ import {
   BarChart3,
   CheckCircle2,
   Clock3,
+  Download,
   Play,
   QrCode,
   RefreshCw,
@@ -408,15 +409,33 @@ export function WhatsappHistoryClient({
                       </div>
                       <div className="flex gap-2">
                         {row.status === "ready" ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => gerarRelatorio.mutate(row.id)}
-                            disabled={gerarRelatorio.isPending && reportingId === row.id}
-                          >
-                            <BarChart3 className="h-4 w-4" aria-hidden />
-                            {row.report ? t("Atualizar relatório") : t("Gerar relatório")}
-                          </Button>
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => gerarRelatorio.mutate(row.id)}
+                              disabled={gerarRelatorio.isPending && reportingId === row.id}
+                            >
+                              <BarChart3 className="h-4 w-4" aria-hidden />
+                              {row.report ? t("Atualizar relatório") : t("Gerar relatório")}
+                            </Button>
+                            <Button variant="outline" size="sm" asChild>
+                              <a
+                                href={`/api/v1/whatsapp-history/imports/${row.id}/export?dataset=messages`}
+                              >
+                                <Download className="h-4 w-4" aria-hidden />
+                                {t("CSV mensagens")}
+                              </a>
+                            </Button>
+                            <Button variant="outline" size="sm" asChild>
+                              <a
+                                href={`/api/v1/whatsapp-history/imports/${row.id}/export?dataset=chats`}
+                              >
+                                <Download className="h-4 w-4" aria-hidden />
+                                {t("CSV chats")}
+                              </a>
+                            </Button>
+                          </>
                         ) : null}
                         {row.status === "qr_pending" || row.status === "importing" ? (
                           <Button
@@ -488,6 +507,9 @@ function ReportPanel({ report }: { report: ReportRow }) {
         <div>
           <h3 className="text-sm font-semibold">{t("Relatório")}</h3>
           <p className="mt-1 text-sm text-muted-foreground">{report.summary}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("Análise por regras e métricas; não usa IA nem interpreta o texto das mensagens.")}
+          </p>
         </div>
         <p className="text-xs text-muted-foreground">{fmtDate(report.generated_at)}</p>
       </div>

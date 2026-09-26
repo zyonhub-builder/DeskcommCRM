@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Histórico do WhatsApp",
-    "subtitle": "importação temporária em sessão WAHA separada, com relatório agregado na própria tela",
+    "subtitle": "importação temporária em sessão WAHA separada, relatório agregado e export CSV minimizado",
     "output": "whatsapp-history.html",
     "quality_profile": "standard"
   },
@@ -14,7 +14,7 @@
     { "id": "worker", "label": "Worker" },
     { "id": "persistencia", "label": "Persistência" }
   ],
-  "mainPath": ["tela", "criar", "sessao", "qr", "cron", "overview", "mensagens", "dados", "relatorio_route", "relatorio"],
+  "mainPath": ["tela", "criar", "sessao", "qr", "cron", "overview", "mensagens", "dados", "relatorio_route", "relatorio", "export_route"],
   "nodes": [
     {
       "id": "tela",
@@ -102,7 +102,15 @@
       "col": 9,
       "type": "route",
       "label": "POST imports/:id/report",
-      "sublabel": "gera achados agregados sem exportar conteúdo cru"
+      "sublabel": "gera achados por regras e métricas; não usa IA nem corpo cru"
+    },
+    {
+      "id": "export_route",
+      "lane": "api",
+      "col": 9,
+      "type": "route",
+      "label": "GET imports/:id/export",
+      "sublabel": "CSV de chats ou mensagens com metadados; sem body_encrypted"
     },
     {
       "id": "relatorio",
@@ -118,7 +126,7 @@
       "col": 10,
       "type": "table",
       "label": "api_audit_log",
-      "sublabel": "criar, conectar, concluir, falhar, cancelar, expirar, apagar e gerar relatório"
+      "sublabel": "criar, conectar, concluir, falhar, cancelar, expirar, apagar, relatório e export"
     }
   ],
   "edges": [
@@ -141,6 +149,9 @@
     { "id": "e17", "from": "relatorio_route", "to": "relatorio", "label": "salva relatório" },
     { "id": "e18", "from": "relatorio", "to": "tela", "label": "exibe achados acionáveis" },
     { "id": "e19", "from": "relatorio_route", "to": "audit", "label": "audita geração" },
+    { "id": "e20", "from": "dados", "to": "export_route", "label": "lê metadados minimizados" },
+    { "id": "e21", "from": "export_route", "to": "tela", "label": "baixa CSV" },
+    { "id": "e22", "from": "export_route", "to": "audit", "label": "audita download" },
     { "id": "nl1", "from": "dados", "to": "atendimento", "label": "não-ligação: histórico importado não vira atendimento" }
   ]
 }

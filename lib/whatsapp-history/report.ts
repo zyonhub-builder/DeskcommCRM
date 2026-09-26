@@ -250,6 +250,7 @@ export function buildWhatsappHistoryReport(input: {
   }
 
   const limitations = [
+    "Este relatório não usa IA; é uma leitura automática por regras e métricas operacionais.",
     "Não lemos nem exibimos o corpo das mensagens nesta versão do relatório.",
     "Horário comercial medido em UTC 08h-18h; o fuso da organização ainda não entra nesta régua.",
     "Mídias não são baixadas nem analisadas.",
@@ -262,6 +263,8 @@ export function buildWhatsappHistoryReport(input: {
     report_version: WHATSAPP_HISTORY_REPORT_VERSION,
     summary: sentenceForSummary(findings, input.importRow),
     metrics: {
+      analysis_method: "rules_v1",
+      ai_used: false,
       chats_total: input.importRow.chats_total,
       chats_imported: input.importRow.chats_imported,
       chats_with_messages: messagesByChat.size,

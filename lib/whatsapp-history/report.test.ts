@@ -62,6 +62,9 @@ describe("relatório do histórico do WhatsApp", () => {
     expect(report.metrics.unanswered_chats).toBe(1);
     expect(report.metrics.chats_without_outbound).toBe(1);
     expect(report.metrics.median_first_response_minutes).toBe(10);
+    expect(report.metrics.ai_used).toBe(false);
+    expect(report.metrics.analysis_method).toBe("rules_v1");
+    expect(report.limitations.join(" ")).toContain("não usa IA");
     expect(report.findings.map((finding) => finding.metric)).toEqual(
       expect.arrayContaining(["unanswered_chats", "chats_without_outbound", "media_skipped"]),
     );

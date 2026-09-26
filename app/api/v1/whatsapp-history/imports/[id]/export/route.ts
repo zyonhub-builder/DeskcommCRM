@@ -1,0 +1,264 @@
+import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
+import { z } from "zod";
+
+import { audit } from "@/lib/audit";
+import { fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  csvLine,
+  WHATSAPP_HISTORY_CHATS_EXPORT_HEADER,
+  WHATSAPP_HISTORY_EXPORT_DATASETS,
+  WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER,
+  whatsappHistoryExportFilename,
+  type WhatsappHistoryExportDataset,
+} from "@/lib/whatsapp-history/export";
+
+export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 5000;
+
+const paramsSchema = z.object({ id: z.string().uuid() });
+const querySchema = z.object({
+  dataset: z.enum(WHATSAPP_HISTORY_EXPORT_DATASETS).default("messages"),
+});
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+interface ImportForExport {
+  id: string;
+  status: string;
+  full_sync: boolean;
+  chats_imported: number;
+  messages_imported: number;
+  retention_until: string;
+  created_at: string;
+}
+
+interface ChatForExport {
+  id: string;
+  chat_id_hash: string;
+  kind: string;
+  status: string;
+  messages_seen: number;
+  messages_imported: number;
+  media_skipped: number;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MessageForExport {
+  id: string;
+  chat_id: string;
+  external_id_hash: string | null;
+  sent_at: string | null;
+  direction: string;
+  message_type: string;
+  body_length: number;
+  has_media: boolean;
+  media_mime: string | null;
+  created_at: string;
+}
+
+async function loadImport(admin: AdminClient, organizationId: string, importId: string) {
+  const { data, error } = await admin
+    .from("whatsapp_history_imports")
+    .select("id, status, full_sync, chats_imported, messages_imported, retention_until, created_at")
+    .eq("organization_id", organizationId)
+    .eq("id", importId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ImportForExport | null) ?? null;
+}
+
+async function loadChats(admin: AdminClient, organizationId: string, importId: string) {
+  const { data, error } = await admin
+    .from("whatsapp_history_chats")
+    .select(
+      "id, chat_id_hash, kind, status, messages_seen, messages_imported, media_skipped, last_message_at, created_at, updated_at",
+    )
+    .eq("organization_id", organizationId)
+    .eq("import_id", importId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as ChatForExport[]).map((chat) => [chat.id, chat] as const);
+}
+
+function importCells(row: ImportForExport) {
+  return [row.id, row.created_at, row.full_sync, row.retention_until] as const;
+}
+
+async function* chatCsvLines(input: {
+  admin: AdminClient;
+  organizationId: string;
+  importRow: ImportForExport;
+}): AsyncGenerator<string> {
+  yield csvLine(WHATSAPP_HISTORY_CHATS_EXPORT_HEADER);
+  const chats = await loadChats(input.admin, input.organizationId, input.importRow.id);
+  for (const [, chat] of chats) {
+    yield csvLine([
+      ...importCells(input.importRow),
+      chat.id,
+      chat.chat_id_hash,
+      chat.kind,
+      chat.status,
+      chat.messages_seen,
+      chat.messages_imported,
+      chat.media_skipped,
+      chat.last_message_at,
+      chat.created_at,
+      chat.updated_at,
+    ]);
+  }
+}
+
+async function* messageCsvLines(input: {
+  admin: AdminClient;
+  organizationId: string;
+  importRow: ImportForExport;
+}): AsyncGenerator<string> {
+  yield csvLine(WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER);
+  const chats = new Map(await loadChats(input.admin, input.organizationId, input.importRow.id));
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await input.admin
+      .from("whatsapp_history_messages")
+      .select(
+        "id, chat_id, external_id_hash, sent_at, direction, message_type, body_length, has_media, media_mime, created_at",
+      )
+      .eq("organization_id", input.organizationId)
+      .eq("import_id", input.importRow.id)
+      .order("created_at", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const rows = (data ?? []) as MessageForExport[];
+    for (const message of rows) {
+      const chat = chats.get(message.chat_id);
+      yield csvLine([
+        ...importCells(input.importRow),
+        message.chat_id,
+        chat?.chat_id_hash ?? "",
+        chat?.kind ?? "",
+        chat?.status ?? "",
+        message.id,
+        message.external_id_hash,
+        message.sent_at,
+        message.direction,
+        message.message_type,
+        message.body_length,
+        message.has_media,
+        message.media_mime,
+        message.created_at,
+      ]);
+    }
+
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+}
+
+function streamCsv(lines: AsyncGenerator<string>) {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const line of lines) {
+          controller.enqueue(encoder.encode(line));
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
+function linesForDataset(input: {
+  dataset: WhatsappHistoryExportDataset;
+  admin: AdminClient;
+  organizationId: string;
+  importRow: ImportForExport;
+}) {
+  if (input.dataset === "chats") {
+    return chatCsvLines(input);
+  }
+  return messageCsvLines(input);
+}
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const requestId = randomUUID();
+  const parsedParams = paramsSchema.safeParse(await params);
+  if (!parsedParams.success) {
+    return fail("invalid_payload", "Importação inválida.", 400, { requestId });
+  }
+  const parsedQuery = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  if (!parsedQuery.success) {
+    return fail("invalid_payload", "Exportação inválida.", 400, {
+      requestId,
+      details: parsedQuery.error.flatten(),
+    });
+  }
+
+  const authz = await requireRole("manager", { requestId, resource: "whatsapp_history_export" });
+  if (!authz.ok) return authz.response;
+
+  try {
+    const admin = createAdminClient();
+    const importRow = await loadImport(admin, authz.org.orgId, parsedParams.data.id);
+    if (!importRow) return fail("not_found", "Importação não encontrada.", 404, { requestId });
+    if (importRow.status !== "ready") {
+      return fail("invalid_state", "A importação precisa estar pronta para exportar.", 409, {
+        requestId,
+      });
+    }
+
+    void audit({
+      action: "whatsapp_history.export_downloaded",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
+      resourceType: "whatsapp_history_import",
+      resourceId: importRow.id,
+      requestId,
+      metadata: {
+        dataset: parsedQuery.data.dataset,
+        chats_imported: importRow.chats_imported,
+        messages_imported: importRow.messages_imported,
+      },
+    });
+
+    return new Response(
+      streamCsv(
+        linesForDataset({
+          dataset: parsedQuery.data.dataset,
+          admin,
+          organizationId: authz.org.orgId,
+          importRow,
+        }),
+      ),
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${whatsappHistoryExportFilename({
+            importId: importRow.id,
+            dataset: parsedQuery.data.dataset,
+          })}"`,
+          "X-Request-Id": requestId,
+        },
+      },
+    );
+  } catch (error) {
+    return fail("database_error", "Não foi possível exportar o histórico.", 500, {
+      requestId,
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
