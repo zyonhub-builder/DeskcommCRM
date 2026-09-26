@@ -12,6 +12,7 @@ import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
 } from "@/lib/automation/gatilho-de-data-do-funil";
+import { ZAPSIGN_DOCUMENT_ENTITY_KIND, ZAPSIGN_DOCUMENT_SIGNED_EVENT } from "@/lib/zapsign/events";
 
 /**
  * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
@@ -42,6 +43,7 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   "appointment.confirmed": "calendar_appointment",
   "appointment.rescheduled": "calendar_appointment",
   "appointment.cancelled": "calendar_appointment",
+  [ZAPSIGN_DOCUMENT_SIGNED_EVENT]: ZAPSIGN_DOCUMENT_ENTITY_KIND,
   // O gatilho de DATA do funil (#989) também nasce do relógio, e não de uma
   // ação de alguém — quem o emite é a varredura `lead-date-field-due`, e a
   // entidade que ele traz é o NEGÓCIO dono do campo de data. É `crm_lead`, e
@@ -64,9 +66,21 @@ export const conditionSchema = z.object({
 });
 
 export const actionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
-  z.object({ type: z.literal("send_whatsapp_message"), config: z.object({ channel_session_id: z.string().uuid(), template: z.string().min(1).max(2000) }) }),
-  z.object({ type: z.literal("add_tag"), config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }) }),
+  z.object({
+    type: z.literal("create_or_move_lead"),
+    config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }),
+  }),
+  z.object({
+    type: z.literal("send_whatsapp_message"),
+    config: z.object({
+      channel_session_id: z.string().uuid(),
+      template: z.string().min(1).max(2000),
+    }),
+  }),
+  z.object({
+    type: z.literal("add_tag"),
+    config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }),
+  }),
   z.object({ type: z.literal("assign_owner"), config: z.object({ user_id: z.string().uuid() }) }),
   z.object({
     type: z.literal("send_ai_message"),

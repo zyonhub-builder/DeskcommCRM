@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { automationRulesHandler } from "./engine.handler";
 import { gatilhoDaTransicao } from "@/lib/agenda/laco";
 import { ENTIDADE_ESPERADA_POR_GATILHO, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import { ZAPSIGN_DOCUMENT_ENTITY_KIND, ZAPSIGN_DOCUMENT_SIGNED_EVENT } from "@/lib/zapsign/events";
 
 describe("gatilhos de automação", () => {
   it("o handler assina exatamente o que a tela deixa escolher", () => {
@@ -46,8 +47,16 @@ describe("gatilhos de automação", () => {
     expect(daAgenda.size).toBeGreaterThan(0);
     for (const gatilho of daAgenda) {
       expect(TRIGGER_EVENTS as readonly string[], gatilho).toContain(gatilho);
-      expect(ENTIDADE_ESPERADA_POR_GATILHO[gatilho as keyof typeof ENTIDADE_ESPERADA_POR_GATILHO])
-        .toBe("calendar_appointment");
+      expect(
+        ENTIDADE_ESPERADA_POR_GATILHO[gatilho as keyof typeof ENTIDADE_ESPERADA_POR_GATILHO],
+      ).toBe("calendar_appointment");
     }
+  });
+
+  it("assinatura da ZapSign é gatilho de automação com documento como entidade", () => {
+    expect(TRIGGER_EVENTS as readonly string[]).toContain(ZAPSIGN_DOCUMENT_SIGNED_EVENT);
+    expect(ENTIDADE_ESPERADA_POR_GATILHO[ZAPSIGN_DOCUMENT_SIGNED_EVENT]).toBe(
+      ZAPSIGN_DOCUMENT_ENTITY_KIND,
+    );
   });
 });

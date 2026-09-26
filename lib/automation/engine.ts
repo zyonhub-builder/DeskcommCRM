@@ -23,6 +23,7 @@ import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
 import { ENTIDADE_ESPERADA_POR_GATILHO } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { ZAPSIGN_DOCUMENT_ENTITY_KIND } from "@/lib/zapsign/events";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -36,7 +37,10 @@ interface RuleRow {
 }
 
 /** Hidrata o contexto avaliado pelas condições/ações a partir do entity do evento. */
-export async function buildContext(admin: SupabaseClient, row: EventRow): Promise<Record<string, unknown>> {
+export async function buildContext(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<Record<string, unknown>> {
   const context: Record<string, unknown> = { event: row.payload };
   // Admin client bypassa RLS — todo lookup filtra organization_id do evento
   // (doutrina multi-tenant; um FK cross-org corrompido nunca vaza pro contexto).
@@ -85,6 +89,51 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
           .from("contacts")
           .select("*")
           .eq("id", appointment.contact_id)
+          .eq("organization_id", org)
+          .maybeSingle();
+        if (contact) context.contact = contact;
+      }
+    }
+  } else if (row.entity_kind === ZAPSIGN_DOCUMENT_ENTITY_KIND && row.entity_id) {
+    const { data: document } = await admin
+      .from("zapsign_documents")
+      .select("*")
+      .eq("id", row.entity_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (document) {
+      const zapsignDocument = document as {
+        lead_id?: string | null;
+        contact_id?: string | null;
+      };
+      context.zapsign_document = document;
+
+      if (zapsignDocument.lead_id) {
+        const { data: lead } = await admin
+          .from("crm_leads")
+          .select("*")
+          .eq("id", zapsignDocument.lead_id)
+          .eq("organization_id", org)
+          .maybeSingle();
+        if (lead) {
+          context.lead = lead;
+          const contactId =
+            (lead as { contact_id?: string | null }).contact_id ?? zapsignDocument.contact_id;
+          if (contactId) {
+            const { data: contact } = await admin
+              .from("contacts")
+              .select("*")
+              .eq("id", contactId)
+              .eq("organization_id", org)
+              .maybeSingle();
+            if (contact) context.contact = contact;
+          }
+        }
+      } else if (zapsignDocument.contact_id) {
+        const { data: contact } = await admin
+          .from("contacts")
+          .select("*")
+          .eq("id", zapsignDocument.contact_id)
           .eq("organization_id", org)
           .maybeSingle();
         if (contact) context.contact = contact;
@@ -158,15 +207,19 @@ export async function runAutomationForEvent(
   const serviceBoundaries = new Map<string, Promise<ServiceBoundary>>();
   const requestId = row.metadata?.request_id;
   const causedByRule =
-    Boolean(row.metadata?.caused_by_rule) || (typeof requestId === "string" && requestId.startsWith("rule:"));
+    Boolean(row.metadata?.caused_by_rule) ||
+    (typeof requestId === "string" && requestId.startsWith("rule:"));
   if (causedByRule) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "caused_by_rule" };
   }
 
   const expectedKind = EXPECTED_ENTITY_KIND[row.event_type];
   if (expectedKind && row.entity_kind !== expectedKind) {
-  
-    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "entity_kind_mismatch" };
+    return {
+      consumer_key: AUTOMATION_CONSUMER_KEY,
+      status: "skipped",
+      detail: "entity_kind_mismatch",
+    };
   }
 
   const { data: rules, error } = await admin
@@ -215,7 +268,16 @@ export async function runAutomationForEvent(
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
       const until = await executor.postponeUntil(
-        { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+        {
+          admin,
+          serviceBoundaries,
+          organizationId: row.organization_id,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          event: row,
+          context,
+          requestId: row.id,
+        },
         action.config ?? {},
       );
       if (until) {
@@ -240,7 +302,16 @@ export async function runAutomationForEvent(
       try {
         results.push(
           await executor.execute(
-            { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+            {
+              admin,
+              serviceBoundaries,
+              organizationId: row.organization_id,
+              ruleId: rule.id,
+              ruleName: rule.name,
+              event: row,
+              context,
+              requestId: row.id,
+            },
             action.config ?? {},
           ),
         );
@@ -286,7 +357,9 @@ export async function runAutomationForEvent(
     // A ordem importa: falha (+ skip) vence adiamento. Uma regra em que uma
     // ação falhou/pulou e outra ficou esperando é `partial` — quem lê precisa
     // saber que algo quebrou, não que está tudo a caminho.
-    const naoEnviadas = results.filter((r) => r.status === "failed" || r.status === "skipped").length;
+    const naoEnviadas = results.filter(
+      (r) => r.status === "failed" || r.status === "skipped",
+    ).length;
     const adiados = results.filter((r) => r.status === "postponed").length;
     const status =
       naoEnviadas > 0
@@ -322,7 +395,11 @@ export async function runAutomationForEvent(
 
     // run_count sem RPC de increment: read-modify-write é aceitável aqui
     // (contador informativo de UI, não invariante).
-    const { data: cur } = await admin.from("automation_rules").select("run_count").eq("id", rule.id).maybeSingle();
+    const { data: cur } = await admin
+      .from("automation_rules")
+      .select("run_count")
+      .eq("id", rule.id)
+      .maybeSingle();
     await admin
       .from("automation_rules")
       .update({ last_run_at: new Date().toISOString(), run_count: (cur?.run_count ?? 0) + 1 })
