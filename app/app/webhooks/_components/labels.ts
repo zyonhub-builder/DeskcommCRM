@@ -27,6 +27,7 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "appointment.confirmed": "Quando um horário pendente for confirmado",
   "appointment.rescheduled": "Quando um horário for remarcado",
   "appointment.cancelled": "Quando um horário for cancelado",
+  "zapsign.document_signed": "Quando um contrato ZapSign for assinado",
   "contact.birthday": "No aniversário de um contato",
   // A frase diz o que a regra vê ("uma data do funil"), e não o que o operador
   // escreveu — o campo é escolhido embaixo, e o mesmo rótulo serve para "data
