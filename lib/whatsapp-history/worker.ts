@@ -47,6 +47,36 @@ export interface WhatsappHistoryTickResult {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+interface ConnectionSyncRow {
+  id: string;
+  organization_id: string;
+  status: WhatsappHistoryStatus;
+  transport_session_name: string;
+}
+
+export interface WhatsappHistoryConnectionSyncResult {
+  found: boolean;
+  changed: boolean;
+  status: WhatsappHistoryStatus | null;
+  transport_status: string | null;
+  error_code?: string;
+  error_message?: string;
+}
+
+interface WhatsappHistoryConnectionSyncInput {
+  organizationId: string;
+  importId: string;
+  actorUserId?: string;
+  requestId?: string;
+}
+
+interface WhatsappHistoryConnectionSyncDeps {
+  admin?: AdminClient;
+  transport?: HistoryTransport | null;
+  now?: () => Date;
+  auditFn?: typeof audit;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -198,6 +228,118 @@ async function deletarSessaoTemporaria(
       erro: erroCurto(error),
     });
   }
+}
+
+export async function syncWhatsappHistoryConnection(
+  input: WhatsappHistoryConnectionSyncInput,
+  deps: WhatsappHistoryConnectionSyncDeps = {},
+): Promise<WhatsappHistoryConnectionSyncResult> {
+  const admin = deps.admin ?? createAdminClient();
+  const transport = "transport" in deps ? deps.transport : getHistoryTransport();
+  const now = deps.now ?? (() => new Date());
+  const auditFn = deps.auditFn ?? audit;
+  const { data, error } = await admin
+    .from("whatsapp_history_imports")
+    .select("id, organization_id, status, transport_session_name")
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.importId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    return { found: false, changed: false, status: null, transport_status: null };
+  }
+
+  const row = data as ConnectionSyncRow;
+  if (row.status !== "qr_pending") {
+    return { found: true, changed: false, status: row.status, transport_status: null };
+  }
+
+  if (!transport) {
+    return {
+      found: true,
+      changed: false,
+      status: "qr_pending",
+      transport_status: null,
+      error_code: "history_transport_not_configured",
+      error_message: "Transporte de histórico não configurado.",
+    };
+  }
+
+  const session = await transport.getSession(row.transport_session_name);
+  if (!session) {
+    const finishedAt = now().toISOString();
+    const { error: updateError } = await admin
+      .from("whatsapp_history_imports")
+      .update({
+        status: "failed",
+        lease_until: null,
+        finished_at: finishedAt,
+        last_error_code: "history_transport_session_missing",
+        last_error_message: "A sessão temporária do transporte não existe mais.",
+      })
+      .eq("organization_id", row.organization_id)
+      .eq("id", row.id)
+      .eq("status", "qr_pending");
+    if (updateError) throw updateError;
+    void auditFn({
+      action: "whatsapp_history.import_failed",
+      actorUserId: input.actorUserId,
+      organizationId: row.organization_id,
+      resourceType: "whatsapp_history_import",
+      resourceId: row.id,
+      requestId: input.requestId,
+      metadata: { reason: "history_transport_session_missing" },
+    });
+    return {
+      found: true,
+      changed: true,
+      status: "failed",
+      transport_status: null,
+      error_code: "history_transport_session_missing",
+      error_message: "A sessão temporária do transporte não existe mais.",
+    };
+  }
+
+  if (session.status !== "WORKING") {
+    return {
+      found: true,
+      changed: false,
+      status: "qr_pending",
+      transport_status: session.status,
+    };
+  }
+
+  const connectedAt = now().toISOString();
+  const { error: updateError } = await admin
+    .from("whatsapp_history_imports")
+    .update({
+      status: "importing",
+      connected_at: connectedAt,
+      lease_until: null,
+      last_error_code: null,
+      last_error_message: null,
+    })
+    .eq("organization_id", row.organization_id)
+    .eq("id", row.id)
+    .eq("status", "qr_pending");
+  if (updateError) throw updateError;
+
+  void auditFn({
+    action: "whatsapp_history.import_connected",
+    actorUserId: input.actorUserId,
+    organizationId: row.organization_id,
+    resourceType: "whatsapp_history_import",
+    resourceId: row.id,
+    requestId: input.requestId,
+    metadata: { transport_status: session.status },
+  });
+
+  return {
+    found: true,
+    changed: true,
+    status: "importing",
+    transport_status: session.status,
+  };
 }
 
 async function expurgarVencidos(admin: AdminClient): Promise<number> {

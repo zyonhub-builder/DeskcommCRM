@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -136,6 +136,29 @@ export function WhatsappHistoryClient({
     onError: showApiError,
   });
 
+  const {
+    mutate: sincronizarConexao,
+    isPending: sincronizandoConexao,
+  } = useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post(`/api/v1/whatsapp-history/imports/${id}/sync`, {}),
+    onSuccess: reload,
+    onError: () => undefined,
+  });
+
+  const activeQrId = active?.status === "qr_pending" ? active.id : null;
+
+  useEffect(() => {
+    if (!activeQrId || !canStart || !transportConfigured) return;
+
+    const executar = () => {
+      if (!sincronizandoConexao) sincronizarConexao(activeQrId);
+    };
+    executar();
+    const timer = window.setInterval(executar, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeQrId, canStart, transportConfigured, sincronizandoConexao, sincronizarConexao]);
+
   const podeCriar = canStart && transportConfigured && consent && (!fullSync || fullSyncAck);
 
   return (
@@ -257,8 +280,15 @@ export function WhatsappHistoryClient({
                 <div>
                   <h2 className="text-base font-semibold">{t("Conectar sessão temporária")}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {t("Depois da leitura do QR, a importação começa no próximo ciclo do worker.")}
+                    {t(
+                      "Depois da leitura do QR, vamos confirmar a conexão automaticamente e iniciar a importação.",
+                    )}
                   </p>
+                  {sincronizandoConexao ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {t("Verificando se o QR já foi lido…")}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" onClick={reload} disabled={imports.isFetching}>

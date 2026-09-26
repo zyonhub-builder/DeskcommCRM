@@ -50,6 +50,7 @@ export const AUDIT_ACTIONS = [
   "zapsign.webhook_received",
   "zapsign.webhook_invalid_signature",
   "whatsapp_history.import_created",
+  "whatsapp_history.import_connected",
   "whatsapp_history.import_completed",
   "whatsapp_history.import_failed",
   "whatsapp_history.import_cancelled",
