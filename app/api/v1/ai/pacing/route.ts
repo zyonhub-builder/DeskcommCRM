@@ -31,6 +31,13 @@ export const dynamic = "force-dynamic";
 const KNOB_COLUMNS =
   "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps, number_activated_at";
 
+const TURNOS_REAVALIAVEIS_APOS_PROTECAO = [
+  "inbound_turn",
+  "followup_turn",
+  "case_reply_turn",
+  "operator_turn",
+];
+
 /**
  * `organizations.timezone`, para a tela mostrar o fuso em que o motor avalia a
  * janela de quem não escolheu um no número (`fusoDaJanela`). Falha vira `null`
@@ -40,8 +47,41 @@ async function lerFusoDaOrganizacao(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
 ): Promise<string | null> {
-  const { data } = await admin.from("organizations").select("timezone").eq("id", orgId).maybeSingle();
+  const { data } = await admin
+    .from("organizations")
+    .select("timezone")
+    .eq("id", orgId)
+    .maybeSingle();
   return (data as { timezone?: string | null } | null)?.timezone ?? null;
+}
+
+async function reavaliarTurnosRepresadosPorProtecao(
+  admin: ReturnType<typeof createAdminClient>,
+  alvo: { organizationId: string; channelSessionId: string; agora: Date },
+): Promise<number> {
+  const agoraIso = alvo.agora.toISOString();
+  const { count, error } = await admin
+    .from("job_queue")
+    .update(
+      {
+        run_after: agoraIso,
+        locked_by: null,
+        locked_at: null,
+        last_error: "proteção de envio alterada — reavaliar agora",
+      },
+      { count: "exact" },
+    )
+    .eq("organization_id", alvo.organizationId)
+    .eq("status", "pending")
+    .in("kind", TURNOS_REAVALIAVEIS_APOS_PROTECAO)
+    .gt("run_after", agoraIso)
+    .contains("payload", { channel_session_id: alvo.channelSessionId })
+    .or("last_error.ilike.cap de envio%,last_error.ilike.fora da janela anti-ban%");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return count ?? 0;
 }
 
 export async function GET(): Promise<Response> {
@@ -52,23 +92,24 @@ export async function GET(): Promise<Response> {
   const { org } = authz;
 
   const admin = createAdminClient();
-  const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }, fusoDaOrg] = await Promise.all([
-    admin
-      .from("channel_sessions")
-      .select("id, waha_session_name, display_name, phone_number, status, daily_message_limit")
-      .eq("organization_id", org.orgId)
-      // Canal arquivado foi excluído pelo usuário: não volta como opção aqui.
-      .is("archived_at", null)
-      // Ritmo de envio é regra de canal de MENSAGEM. A linha de chamada de voz
-      // (spec 18) não dispara nada e não tem intervalo a calibrar.
-      .in("provider", [...PROVIDERS_DE_MENSAGEM])
-      .order("created_at", { ascending: true }),
-    admin
-      .from("channel_knobs")
-      .select(`channel_session_id, ${KNOB_COLUMNS}`)
-      .eq("organization_id", org.orgId),
-    lerFusoDaOrganizacao(admin, org.orgId),
-  ]);
+  const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }, fusoDaOrg] =
+    await Promise.all([
+      admin
+        .from("channel_sessions")
+        .select("id, waha_session_name, display_name, phone_number, status, daily_message_limit")
+        .eq("organization_id", org.orgId)
+        // Canal arquivado foi excluído pelo usuário: não volta como opção aqui.
+        .is("archived_at", null)
+        // Ritmo de envio é regra de canal de MENSAGEM. A linha de chamada de voz
+        // (spec 18) não dispara nada e não tem intervalo a calibrar.
+        .in("provider", [...PROVIDERS_DE_MENSAGEM])
+        .order("created_at", { ascending: true }),
+      admin
+        .from("channel_knobs")
+        .select(`channel_session_id, ${KNOB_COLUMNS}`)
+        .eq("organization_id", org.orgId),
+      lerFusoDaOrganizacao(admin, org.orgId),
+    ]);
   if (sErr || kErr) {
     return fail("internal_error", t("Falha ao carregar conexões/knobs."), 500, { requestId });
   }
@@ -210,13 +251,35 @@ export async function PUT(req: NextRequest): Promise<Response> {
     }
   }
 
+  let jobsReavaliados = 0;
+  if (Object.keys(knobFields).length > 0 || daily_message_limit !== undefined) {
+    try {
+      jobsReavaliados = await reavaliarTurnosRepresadosPorProtecao(admin, {
+        organizationId: org.orgId,
+        channelSessionId: channel_session_id,
+        agora: new Date(),
+      });
+    } catch (error) {
+      return fail(
+        "internal_error",
+        t("Configuração salva, mas não foi possível reavaliar respostas pendentes."),
+        500,
+        { requestId, details: { motivo: error instanceof Error ? error.message : String(error) } },
+      );
+    }
+  }
+
   await audit({
     action: "ai.pacing_knobs_updated",
     actorUserId: authUser.id,
     organizationId: org.orgId,
     resourceType: "channel_knobs",
     resourceId: channel_session_id,
-    metadata: { ...knobFields, daily_message_limit: daily_message_limit ?? null },
+    metadata: {
+      ...knobFields,
+      daily_message_limit: daily_message_limit ?? null,
+      jobs_reavaliados: jobsReavaliados,
+    },
   });
 
   const { data: savedRow } = await admin
@@ -228,6 +291,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   return ok(
     {
       channel_session_id,
+      jobs_reavaliados: jobsReavaliados,
       ...knobsView(
         (savedRow as unknown as ChannelKnobsRow) ?? null,
         new Date(),

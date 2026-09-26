@@ -48,6 +48,7 @@ import { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
+import type * as SupportModule from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -57,6 +58,7 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 const ORG = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";
 const CANAL = "44444444-4444-4444-8444-444444444444";
+const OUTRO_CANAL = "55555555-5555-4555-8555-555555555555";
 const DATA_JA_SALVA = "2026-01-10T12:00:00.000Z";
 
 type Linha = Record<string, unknown>;
@@ -73,6 +75,7 @@ interface Registro {
   upserts: Linha[];
   knobs: Linha | null;
   sessao: Linha;
+  jobs: Linha[];
 }
 
 /**
@@ -87,10 +90,15 @@ function makeDb(knobsIniciais: Linha | null = null): Registro {
     upserts: [],
     knobs: knobsIniciais,
     sessao: { id: CANAL, organization_id: ORG, archived_at: null, daily_message_limit: 250 },
+    jobs: [],
   };
 
   class Q implements PromiseLike<unknown> {
     private filtros: Array<[string, unknown]> = [];
+    private filtrosIn: Array<[string, unknown[]]> = [];
+    private filtrosGt: Array<[string, string]> = [];
+    private filtroJsonb: Record<string, unknown> | null = null;
+    private filtroErroReavaliavel = false;
 
     constructor(
       private readonly table: string,
@@ -109,12 +117,41 @@ function makeDb(knobsIniciais: Linha | null = null): Registro {
       this.filtros.push([col, val]);
       return this;
     }
+    in(col: string, vals: unknown[]): this {
+      this.filtrosIn.push([col, vals]);
+      return this;
+    }
+    gt(col: string, val: string): this {
+      this.filtrosGt.push([col, val]);
+      return this;
+    }
+    contains(_col: string, val: Record<string, unknown>): this {
+      this.filtroJsonb = val;
+      return this;
+    }
+    or(expr: string): this {
+      this.filtroErroReavaliavel =
+        expr.includes("cap de envio") || expr.includes("janela anti-ban");
+      return this;
+    }
     maybeSingle(): this {
       return this;
     }
 
     private casa(linha: Linha): boolean {
-      return this.filtros.every(([c, v]) => (linha[c] ?? null) === v);
+      const basicos = this.filtros.every(([c, v]) => (linha[c] ?? null) === v);
+      const emLista = this.filtrosIn.every(([c, vals]) => vals.includes(linha[c]));
+      const maiorQue = this.filtrosGt.every(([c, v]) => String(linha[c] ?? "") > v);
+      const contemJsonb =
+        this.filtroJsonb === null ||
+        Object.entries(this.filtroJsonb).every(
+          ([c, v]) => (linha.payload as Record<string, unknown> | undefined)?.[c] === v,
+        );
+      const erroReavaliavel =
+        !this.filtroErroReavaliavel ||
+        String(linha.last_error ?? "").startsWith("cap de envio") ||
+        String(linha.last_error ?? "").startsWith("fora da janela anti-ban");
+      return basicos && emLista && maiorQue && contemJsonb && erroReavaliavel;
     }
 
     private executar(): { data: unknown; error: unknown } {
@@ -124,6 +161,15 @@ function makeDb(knobsIniciais: Linha | null = null): Registro {
       }
 
       if (this.op === "update") {
+        if (this.table === "job_queue") {
+          let count = 0;
+          for (const job of registro.jobs) {
+            if (!this.casa(job)) continue;
+            Object.assign(job, this.patch);
+            count += 1;
+          }
+          return { data: null, error: null, count };
+        }
         if (this.casa(registro.sessao)) Object.assign(registro.sessao, this.patch);
         return { data: null, error: null };
       }
@@ -143,7 +189,8 @@ function makeDb(knobsIniciais: Linha | null = null): Registro {
     }
 
     then<R1 = unknown, R2 = never>(
-      onOk?: ((v: { data: unknown; error: unknown }) => R1 | PromiseLike<R1>) | null,
+      onOk?:
+        ((v: { data: unknown; error: unknown; count?: number }) => R1 | PromiseLike<R1>) | null,
       onErr?: ((r: unknown) => R2 | PromiseLike<R2>) | null,
     ): PromiseLike<R1 | R2> {
       return Promise.resolve(this.executar()).then(onOk, onErr);
@@ -296,6 +343,63 @@ describe("PUT /api/v1/ai/pacing — erro do banco diz QUAL campo recusou", () =>
   });
 });
 
+describe("PUT /api/v1/ai/pacing — mudança de proteção acorda turno represado", () => {
+  it("⭐ reabre job do mesmo canal que estava adiado por cap de envio", async () => {
+    authOk();
+    const db = makeDb({
+      organization_id: ORG,
+      channel_session_id: CANAL,
+      number_activated_at: DATA_JA_SALVA,
+    });
+    db.jobs.push(
+      {
+        id: "job-cap",
+        organization_id: ORG,
+        contact_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        kind: "inbound_turn",
+        status: "pending",
+        run_after: "2999-01-01T10:00:00.000Z",
+        last_error: "cap de envio (warmup_cap) atingido — turno adiado para a próxima abertura",
+        payload: { channel_session_id: CANAL },
+      },
+      {
+        id: "job-outro-canal",
+        organization_id: ORG,
+        contact_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        kind: "inbound_turn",
+        status: "pending",
+        run_after: "2999-01-01T10:00:00.000Z",
+        last_error: "cap de envio (warmup_cap) atingido — turno adiado para a próxima abertura",
+        payload: { channel_session_id: OUTRO_CANAL },
+      },
+      {
+        id: "job-debounce",
+        organization_id: ORG,
+        contact_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        kind: "inbound_turn",
+        status: "pending",
+        run_after: "2999-01-01T10:00:00.000Z",
+        last_error: null,
+        payload: { channel_session_id: CANAL },
+      },
+    );
+
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ skip_warmup: true })));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.jobs_reavaliados).toBe(1);
+    expect(db.jobs[0]?.run_after).not.toBe("2999-01-01T10:00:00.000Z");
+    expect(db.jobs[0]?.last_error).toBe("proteção de envio alterada — reavaliar agora");
+    expect(db.jobs[1]?.run_after).toBe("2999-01-01T10:00:00.000Z");
+    expect(db.jobs[2]?.run_after).toBe("2999-01-01T10:00:00.000Z");
+
+    const metadata = vi.mocked(audit).mock.calls[0]?.[0]?.metadata as Linha | undefined;
+    expect(metadata?.jobs_reavaliados).toBe(1);
+  });
+});
+
 describe("A TELA e o texto que ela promete", () => {
   it("o texto de ajuda não promete rejuvenescer um número cuja data já está salva", () => {
     const sheet = readFileSync(
@@ -314,7 +418,7 @@ describe("A TELA e o texto que ela promete", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...(await importOriginal<typeof SupportModule>()),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
