@@ -735,18 +735,10 @@ export function WhatsappHistoryClient({
                             </Button>
                             <Button variant="outline" size="sm" asChild>
                               <a
-                                href={`/api/v1/whatsapp-history/imports/${row.id}/export?dataset=messages&format=xlsx`}
+                                href={`/api/v1/whatsapp-history/imports/${row.id}/export?dataset=complete&format=xlsx`}
                               >
                                 <FileSpreadsheet className="h-4 w-4" aria-hidden />
-                                {t("XLSX mensagens")}
-                              </a>
-                            </Button>
-                            <Button variant="outline" size="sm" asChild>
-                              <a
-                                href={`/api/v1/whatsapp-history/imports/${row.id}/export?dataset=chats&format=xlsx`}
-                              >
-                                <FileSpreadsheet className="h-4 w-4" aria-hidden />
-                                {t("XLSX chats")}
+                                {t("XLSX completo")}
                               </a>
                             </Button>
                             {row.report ? (

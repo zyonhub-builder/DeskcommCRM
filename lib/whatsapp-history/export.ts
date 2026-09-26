@@ -1,4 +1,4 @@
-export const WHATSAPP_HISTORY_EXPORT_DATASETS = ["messages", "chats"] as const;
+export const WHATSAPP_HISTORY_EXPORT_DATASETS = ["messages", "chats", "complete"] as const;
 export const WHATSAPP_HISTORY_EXPORT_FORMATS = ["csv", "xlsx"] as const;
 
 export type WhatsappHistoryExportDataset = (typeof WHATSAPP_HISTORY_EXPORT_DATASETS)[number];
@@ -21,6 +21,28 @@ export const WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER = [
   "body_length",
   "has_media",
   "media_mime",
+  "created_at",
+] as const;
+
+export const WHATSAPP_HISTORY_COMPLETE_MESSAGES_EXPORT_HEADER = [
+  "sent_at",
+  "chat_label",
+  "direction",
+  "message_type",
+  "body",
+  "body_length",
+  "has_media",
+  "media_mime",
+  "chat_kind",
+  "chat_status",
+  "chat_id_hash",
+  "message_id",
+  "external_id_hash",
+  "chat_row_id",
+  "import_id",
+  "import_created_at",
+  "import_full_sync",
+  "import_retention_until",
   "created_at",
 ] as const;
 
