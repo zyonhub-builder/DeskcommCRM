@@ -10,18 +10,23 @@ import {
   csvLine,
   WHATSAPP_HISTORY_CHATS_EXPORT_HEADER,
   WHATSAPP_HISTORY_EXPORT_DATASETS,
+  WHATSAPP_HISTORY_EXPORT_FORMATS,
   WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER,
   whatsappHistoryExportFilename,
   type WhatsappHistoryExportDataset,
+  type WhatsappHistoryExportFormat,
 } from "@/lib/whatsapp-history/export";
+import { buildXlsxWorkbook, type XlsxCellValue } from "@/lib/whatsapp-history/xlsx";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 5000;
+const MAX_XLSX_ROWS = 100_000;
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 const querySchema = z.object({
   dataset: z.enum(WHATSAPP_HISTORY_EXPORT_DATASETS).default("messages"),
+  format: z.enum(WHATSAPP_HISTORY_EXPORT_FORMATS).default("csv"),
 });
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -90,6 +95,45 @@ function importCells(row: ImportForExport) {
   return [row.id, row.created_at, row.full_sync, row.retention_until] as const;
 }
 
+function chatCells(importRow: ImportForExport, chat: ChatForExport): XlsxCellValue[] {
+  return [
+    ...importCells(importRow),
+    chat.id,
+    chat.chat_id_hash,
+    chat.kind,
+    chat.status,
+    chat.messages_seen,
+    chat.messages_imported,
+    chat.media_skipped,
+    chat.last_message_at,
+    chat.created_at,
+    chat.updated_at,
+  ];
+}
+
+function messageCells(
+  importRow: ImportForExport,
+  chat: ChatForExport | undefined,
+  message: MessageForExport,
+): XlsxCellValue[] {
+  return [
+    ...importCells(importRow),
+    message.chat_id,
+    chat?.chat_id_hash ?? "",
+    chat?.kind ?? "",
+    chat?.status ?? "",
+    message.id,
+    message.external_id_hash,
+    message.sent_at,
+    message.direction,
+    message.message_type,
+    message.body_length,
+    message.has_media,
+    message.media_mime,
+    message.created_at,
+  ];
+}
+
 async function* chatCsvLines(input: {
   admin: AdminClient;
   organizationId: string;
@@ -98,19 +142,7 @@ async function* chatCsvLines(input: {
   yield csvLine(WHATSAPP_HISTORY_CHATS_EXPORT_HEADER);
   const chats = await loadChats(input.admin, input.organizationId, input.importRow.id);
   for (const [, chat] of chats) {
-    yield csvLine([
-      ...importCells(input.importRow),
-      chat.id,
-      chat.chat_id_hash,
-      chat.kind,
-      chat.status,
-      chat.messages_seen,
-      chat.messages_imported,
-      chat.media_skipped,
-      chat.last_message_at,
-      chat.created_at,
-      chat.updated_at,
-    ]);
+    yield csvLine(chatCells(input.importRow, chat));
   }
 }
 
@@ -138,27 +170,57 @@ async function* messageCsvLines(input: {
     const rows = (data ?? []) as MessageForExport[];
     for (const message of rows) {
       const chat = chats.get(message.chat_id);
-      yield csvLine([
-        ...importCells(input.importRow),
-        message.chat_id,
-        chat?.chat_id_hash ?? "",
-        chat?.kind ?? "",
-        chat?.status ?? "",
-        message.id,
-        message.external_id_hash,
-        message.sent_at,
-        message.direction,
-        message.message_type,
-        message.body_length,
-        message.has_media,
-        message.media_mime,
-        message.created_at,
-      ]);
+      yield csvLine(messageCells(input.importRow, chat, message));
     }
 
     if (rows.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
   }
+}
+
+async function chatXlsxRows(input: {
+  admin: AdminClient;
+  organizationId: string;
+  importRow: ImportForExport;
+}): Promise<XlsxCellValue[][]> {
+  const chats = await loadChats(input.admin, input.organizationId, input.importRow.id);
+  return [
+    [...WHATSAPP_HISTORY_CHATS_EXPORT_HEADER],
+    ...chats.map(([, chat]) => chatCells(input.importRow, chat)),
+  ];
+}
+
+async function messageXlsxRows(input: {
+  admin: AdminClient;
+  organizationId: string;
+  importRow: ImportForExport;
+}): Promise<XlsxCellValue[][]> {
+  const chats = new Map(await loadChats(input.admin, input.organizationId, input.importRow.id));
+  const rows: XlsxCellValue[][] = [[...WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER]];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await input.admin
+      .from("whatsapp_history_messages")
+      .select(
+        "id, chat_id, external_id_hash, sent_at, direction, message_type, body_length, has_media, media_mime, created_at",
+      )
+      .eq("organization_id", input.organizationId)
+      .eq("import_id", input.importRow.id)
+      .order("created_at", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = (data ?? []) as MessageForExport[];
+    for (const message of page) {
+      rows.push(messageCells(input.importRow, chats.get(message.chat_id), message));
+    }
+
+    if (page.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return rows;
 }
 
 function streamCsv(lines: AsyncGenerator<string>) {
@@ -187,6 +249,33 @@ function linesForDataset(input: {
     return chatCsvLines(input);
   }
   return messageCsvLines(input);
+}
+
+async function xlsxRowsForDataset(input: {
+  dataset: WhatsappHistoryExportDataset;
+  admin: AdminClient;
+  organizationId: string;
+  importRow: ImportForExport;
+}) {
+  if (input.dataset === "chats") {
+    return chatXlsxRows(input);
+  }
+  return messageXlsxRows(input);
+}
+
+function xlsxRowCount(input: {
+  dataset: WhatsappHistoryExportDataset;
+  importRow: ImportForExport;
+}): number {
+  return input.dataset === "chats"
+    ? input.importRow.chats_imported
+    : input.importRow.messages_imported;
+}
+
+function contentType(format: WhatsappHistoryExportFormat): string {
+  return format === "xlsx"
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : "text/csv; charset=utf-8";
 }
 
 export async function GET(
@@ -219,20 +308,67 @@ export async function GET(
       });
     }
 
-    void audit({
-      action: "whatsapp_history.export_downloaded",
-      actorUserId: authz.user.id,
-      organizationId: authz.org.orgId,
-      resourceType: "whatsapp_history_import",
-      resourceId: importRow.id,
-      requestId,
-      metadata: {
-        dataset: parsedQuery.data.dataset,
-        chats_imported: importRow.chats_imported,
-        messages_imported: importRow.messages_imported,
-      },
-    });
+    const auditDownload = () =>
+      void audit({
+        action: "whatsapp_history.export_downloaded",
+        actorUserId: authz.user.id,
+        organizationId: authz.org.orgId,
+        resourceType: "whatsapp_history_import",
+        resourceId: importRow.id,
+        requestId,
+        metadata: {
+          dataset: parsedQuery.data.dataset,
+          format: parsedQuery.data.format,
+          chats_imported: importRow.chats_imported,
+          messages_imported: importRow.messages_imported,
+        },
+      });
 
+    if (parsedQuery.data.format === "xlsx") {
+      const rowCount = xlsxRowCount({
+        dataset: parsedQuery.data.dataset,
+        importRow,
+      });
+      if (rowCount > MAX_XLSX_ROWS) {
+        return fail(
+          "payload_too_large",
+          `O XLSX aceita até ${MAX_XLSX_ROWS} linhas neste export. Use CSV para volumes maiores.`,
+          413,
+          { requestId },
+        );
+      }
+
+      const rows = await xlsxRowsForDataset({
+        dataset: parsedQuery.data.dataset,
+        admin,
+        organizationId: authz.org.orgId,
+        importRow,
+      });
+      const workbook = buildXlsxWorkbook([
+        {
+          name: parsedQuery.data.dataset === "messages" ? "Mensagens" : "Chats",
+          rows,
+        },
+      ]);
+      const workbookBody = new Uint8Array(workbook).buffer;
+
+      auditDownload();
+      return new Response(workbookBody, {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+          "Content-Type": contentType(parsedQuery.data.format),
+          "Content-Disposition": `attachment; filename="${whatsappHistoryExportFilename({
+            importId: importRow.id,
+            dataset: parsedQuery.data.dataset,
+            format: parsedQuery.data.format,
+          })}"`,
+          "X-Request-Id": requestId,
+        },
+      });
+    }
+
+    auditDownload();
     return new Response(
       streamCsv(
         linesForDataset({
@@ -250,6 +386,7 @@ export async function GET(
           "Content-Disposition": `attachment; filename="${whatsappHistoryExportFilename({
             importId: importRow.id,
             dataset: parsedQuery.data.dataset,
+            format: parsedQuery.data.format,
           })}"`,
           "X-Request-Id": requestId,
         },

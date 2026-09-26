@@ -1,8 +1,20 @@
+import { createHash } from "node:crypto";
+import { generateText } from "ai";
+import { z } from "zod";
+
+import { DEFAULT_CLASSIFIER_MODEL, gatewayConfig, gatewayHeaders } from "@/lib/ai/gateway";
+import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { readWhatsappHistoryAnalysisSettings } from "@/lib/whatsapp-history/analysis-settings";
 
 export const WHATSAPP_HISTORY_REPORT_VERSION = "whatsapp_history_report_v1";
+export const WHATSAPP_HISTORY_AI_REPORT_VERSION = "whatsapp_history_ai_report_v1";
+export const WHATSAPP_HISTORY_ANALYSIS_PURPOSE = "whatsapp_history_analysis";
 export const WHATSAPP_HISTORY_REPORT_MESSAGE_SAMPLE = 100_000;
+export const WHATSAPP_HISTORY_AI_MESSAGE_SAMPLE = 400;
+export const WHATSAPP_HISTORY_AI_CHAR_BUDGET = 80_000;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -63,9 +75,21 @@ interface MessageForReport {
   has_media: boolean | null;
 }
 
+interface MessageForAiReport extends MessageForReport {
+  body_encrypted: string | null;
+  body_length: number | null;
+  message_type: string | null;
+}
+
 export class WhatsappHistoryReportError extends Error {
   constructor(
-    public readonly code: "not_found" | "not_ready" | "database_error",
+    public readonly code:
+      | "not_found"
+      | "not_ready"
+      | "not_enough_data"
+      | "ai_unavailable"
+      | "ai_output_invalid"
+      | "database_error",
     message: string,
   ) {
     super(message);
@@ -109,6 +133,158 @@ function businessHourUtc(iso: string | null): boolean {
 function percent(part: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((part / total) * 100);
+}
+
+const aiFindingSchema = z.object({
+  severity: z.enum(["high", "medium", "low"]).default("medium"),
+  title: z.string().min(1).max(160),
+  detail: z.string().min(1).max(1200),
+  metric: z.string().min(1).max(120),
+  next_step: z.string().min(1).max(600),
+});
+
+const aiFaqSchema = z.object({
+  question: z.string().min(1).max(240),
+  evidence: z.string().min(1).max(600),
+  suggested_answer: z.string().max(1000).optional(),
+});
+
+const aiReportSchema = z.object({
+  summary: z.string().min(10).max(1600),
+  findings: z.array(aiFindingSchema).max(12).default([]),
+  faqs: z.array(aiFaqSchema).max(12).default([]),
+  improvements: z.array(z.string().min(1).max(600)).max(16).default([]),
+  limitations: z.array(z.string().min(1).max(600)).max(10).default([]),
+});
+
+type AiReportPayload = z.infer<typeof aiReportSchema>;
+
+function promptHash(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex");
+}
+
+export function sanitizeWhatsappHistoryMessageBody(body: string): string {
+  return body
+    .replace(/https?:\/\/[^\s]+/gi, "[url]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
+    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, "[documento]")
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, "[documento]")
+    .replace(/(?:\+?\d[\s().-]*){9,}/g, "[telefone]")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function jsonFromModelText(text: string): unknown {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fenced?.[1]?.trim() ?? trimmed;
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) throw new Error("json ausente");
+    return JSON.parse(candidate.slice(start, end + 1));
+  }
+}
+
+function parseAiReport(text: string): AiReportPayload {
+  const parsed = aiReportSchema.safeParse(jsonFromModelText(text));
+  if (!parsed.success) {
+    throw new WhatsappHistoryReportError(
+      "ai_output_invalid",
+      "A IA devolveu um relatório fora do formato esperado.",
+    );
+  }
+  return parsed.data;
+}
+
+function aiDirectionLabel(direction: MessageForReport["direction"]): string {
+  if (direction === "inbound") return "cliente";
+  if (direction === "outbound") return "atendimento";
+  return "desconhecido";
+}
+
+async function buildSanitizedTranscript(input: {
+  admin: AdminClient;
+  messages: MessageForAiReport[];
+}): Promise<{
+  transcript: string;
+  messagesSampled: number;
+  chatsSampled: number;
+  charsSent: number;
+  encryptedSkipped: number;
+}> {
+  const labels = new Map<string, string>();
+  const lines: string[] = [];
+  let charsSent = 0;
+  let encryptedSkipped = 0;
+
+  for (const message of input.messages) {
+    if (!message.body_encrypted) continue;
+    const decrypted = await decryptWebhookSecret(input.admin, message.body_encrypted);
+    if (!decrypted) {
+      encryptedSkipped += 1;
+      continue;
+    }
+
+    const sanitized = sanitizeWhatsappHistoryMessageBody(decrypted).slice(0, 1200);
+    if (!sanitized) continue;
+
+    let label = labels.get(message.chat_id);
+    if (!label) {
+      label = `chat_${String(labels.size + 1).padStart(3, "0")}`;
+      labels.set(message.chat_id, label);
+    }
+
+    const line = `[${label}] ${message.sent_at ?? "sem_data"} ${aiDirectionLabel(message.direction)}: ${sanitized}`;
+    const nextLength = charsSent + line.length + 1;
+    if (nextLength > WHATSAPP_HISTORY_AI_CHAR_BUDGET) {
+      if (lines.length > 0) break;
+      const remaining = Math.max(0, WHATSAPP_HISTORY_AI_CHAR_BUDGET - charsSent);
+      lines.push(line.slice(0, remaining));
+      charsSent += remaining;
+      break;
+    }
+
+    lines.push(line);
+    charsSent = nextLength;
+  }
+
+  return {
+    transcript: lines.join("\n"),
+    messagesSampled: lines.length,
+    chatsSampled: labels.size,
+    charsSent,
+    encryptedSkipped,
+  };
+}
+
+export function buildWhatsappHistoryAiPromptInput(input: {
+  importRow: ImportForReport;
+  rulesReport: WhatsappHistoryReportPayload;
+  transcript: string;
+  transcriptStats: { messagesSampled: number; chatsSampled: number; charsSent: number };
+}): string {
+  return `Analise o histórico abaixo e responda somente com JSON válido.
+
+Escopo:
+- import_id: ${input.importRow.id}
+- chats_importados: ${input.importRow.chats_imported}
+- mensagens_importadas: ${input.importRow.messages_imported}
+- mensagens_textuais_enviadas_para_ia: ${input.transcriptStats.messagesSampled}
+- chats_na_amostra_da_ia: ${input.transcriptStats.chatsSampled}
+- caracteres_sanitizados_enviados: ${input.transcriptStats.charsSent}
+
+Métricas automáticas já calculadas:
+${JSON.stringify(input.rulesReport.metrics, null, 2)}
+
+Achados automáticos por regras:
+${JSON.stringify(input.rulesReport.findings, null, 2)}
+
+Transcrição sanitizada e pseudonimizada:
+${input.transcript}`;
 }
 
 function sentenceForSummary(findings: WhatsappHistoryReportFinding[], importRow: ImportForReport) {
@@ -169,7 +345,9 @@ export function buildWhatsappHistoryReport(input: {
     const lastKnown = [...ordered].reverse().find((message) => message.direction !== "unknown");
     if (lastKnown?.direction === "inbound") unansweredChats += 1;
 
-    const firstInbound = ordered.find((message) => message.direction === "inbound" && message.sent_at);
+    const firstInbound = ordered.find(
+      (message) => message.direction === "inbound" && message.sent_at,
+    );
     if (!firstInbound?.sent_at) continue;
     const firstOutboundAfter = ordered.find(
       (message) =>
@@ -196,7 +374,10 @@ export function buildWhatsappHistoryReport(input: {
   const findings: WhatsappHistoryReportFinding[] = [];
   if (unansweredChats > 0) {
     findings.push({
-      severity: unansweredChats >= 5 || percent(unansweredChats, chatsWithInbound) >= 25 ? "high" : "medium",
+      severity:
+        unansweredChats >= 5 || percent(unansweredChats, chatsWithInbound) >= 25
+          ? "high"
+          : "medium",
       title: "Conversas terminaram com o cliente sem resposta posterior",
       detail: `${unansweredChats} chat(s) tiveram a última mensagem conhecida como entrada do cliente.`,
       metric: "unanswered_chats",
@@ -209,7 +390,8 @@ export function buildWhatsappHistoryReport(input: {
       title: "Chats importados sem nenhuma resposta enviada",
       detail: `${chatsWithoutOutbound} chat(s) têm mensagem do cliente e nenhuma saída registrada na amostra.`,
       metric: "chats_without_outbound",
-      next_step: "Conferir se estes contatos deveriam entrar no atendimento ativo ou numa campanha de retomada.",
+      next_step:
+        "Conferir se estes contatos deveriam entrar no atendimento ativo ou numa campanha de retomada.",
     });
   }
   if (medianFirstResponse !== null && medianFirstResponse >= 60) {
@@ -218,7 +400,8 @@ export function buildWhatsappHistoryReport(input: {
       title: "Primeira resposta lenta",
       detail: `A mediana da primeira resposta foi de ${medianFirstResponse} minuto(s).`,
       metric: "median_first_response_minutes",
-      next_step: "Comparar horários de pico com escala humana e janela do agente antes de ajustar automação.",
+      next_step:
+        "Comparar horários de pico com escala humana e janela do agente antes de ajustar automação.",
     });
   }
   if (inboundMessages > 0 && percent(inboundOutsideBusinessHours, inboundMessages) >= 30) {
@@ -227,14 +410,16 @@ export function buildWhatsappHistoryReport(input: {
       title: "Demanda fora do horário comercial",
       detail: `${percent(inboundOutsideBusinessHours, inboundMessages)}% das entradas caíram fora da janela UTC 08h-18h.`,
       metric: "inbound_outside_business_hours_percent",
-      next_step: "Configurar cobertura de IA/follow-up para os horários em que a equipe não responde.",
+      next_step:
+        "Configurar cobertura de IA/follow-up para os horários em que a equipe não responde.",
     });
   }
   if (hitChatLimit || hitMessageLimit || sampleLimited) {
     findings.push({
       severity: "low",
       title: "A leitura pode estar parcial",
-      detail: "A importação ou o relatório encontrou limite de chats, mensagens por chat ou amostragem.",
+      detail:
+        "A importação ou o relatório encontrou limite de chats, mensagens por chat ou amostragem.",
       metric: "partial_import_or_report",
       next_step: "Gerar nova importação com limites maiores antes de tomar decisão definitiva.",
     });
@@ -245,7 +430,8 @@ export function buildWhatsappHistoryReport(input: {
       title: "Mídias ficaram fora da análise",
       detail: `${input.importRow.media_skipped} mídia(s) foram contadas, mas não baixadas nem interpretadas nesta POC.`,
       metric: "media_skipped",
-      next_step: "Tratar este relatório como análise textual/operacional e não como auditoria completa da conversa.",
+      next_step:
+        "Tratar este relatório como análise textual/operacional e não como auditoria completa da conversa.",
     });
   }
 
@@ -255,7 +441,9 @@ export function buildWhatsappHistoryReport(input: {
     "Horário comercial medido em UTC 08h-18h; o fuso da organização ainda não entra nesta régua.",
     "Mídias não são baixadas nem analisadas.",
     ...(sampleLimited
-      ? [`O relatório analisou ${input.sampledMessages} de ${input.importRow.messages_imported} mensagens importadas.`]
+      ? [
+          `O relatório analisou ${input.sampledMessages} de ${input.importRow.messages_imported} mensagens importadas.`,
+        ]
       : []),
   ];
 
@@ -299,7 +487,10 @@ function serializeReport(row: Record<string, unknown>): WhatsappHistoryReportRow
     id: String(row.id),
     report_version: String(row.report_version),
     summary: String(row.summary),
-    metrics: (row.metrics && typeof row.metrics === "object" ? row.metrics : {}) as Record<string, unknown>,
+    metrics: (row.metrics && typeof row.metrics === "object" ? row.metrics : {}) as Record<
+      string,
+      unknown
+    >,
     findings: Array.isArray(row.findings) ? (row.findings as WhatsappHistoryReportFinding[]) : [],
     limitations: Array.isArray(row.limitations) ? (row.limitations as string[]) : [],
     generated_at: String(row.generated_at),
@@ -327,6 +518,85 @@ export async function loadWhatsappHistoryReportsByImport(
     reports.set(row.import_id, serializeReport(row));
   }
   return reports;
+}
+
+function metricArray<T extends Record<string, unknown>>(
+  report: WhatsappHistoryReportRow,
+  key: string,
+): T[] {
+  const value = report.metrics[key];
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function markdownList(items: string[]): string {
+  if (items.length === 0) return "- Nenhum item registrado.\n";
+  return items.map((item) => `- ${item}`).join("\n") + "\n";
+}
+
+export function renderWhatsappHistoryReportMarkdown(
+  report: WhatsappHistoryReportRow,
+  input: { importId?: string } = {},
+): string {
+  const faqs = metricArray<{
+    question?: unknown;
+    evidence?: unknown;
+    suggested_answer?: unknown;
+  }>(report, "ai_faqs");
+  const improvements = (report.metrics.ai_improvements ?? []) as unknown;
+  const improvementItems = Array.isArray(improvements)
+    ? improvements.filter((item): item is string => typeof item === "string")
+    : [];
+
+  const lines = [
+    "# Relatório de análise do histórico",
+    "",
+    input.importId ? `Importação: ${input.importId}` : null,
+    `Gerado em: ${report.generated_at}`,
+    `Método: ${String(report.metrics.analysis_method ?? "desconhecido")}`,
+    "",
+    "## Resumo",
+    "",
+    report.summary,
+    "",
+    "## Achados",
+    "",
+    ...(report.findings.length > 0
+      ? report.findings.flatMap((finding) => [
+          `### ${finding.title}`,
+          "",
+          `Severidade: ${finding.severity}`,
+          "",
+          finding.detail,
+          "",
+          `Próximo passo: ${finding.next_step}`,
+          "",
+        ])
+      : ["Nenhum achado registrado.", ""]),
+    "## FAQs E Dúvidas Recorrentes",
+    "",
+    ...(faqs.length > 0
+      ? faqs.flatMap((faq) =>
+          [
+            `- Pergunta: ${String(faq.question ?? "")}`,
+            `  Evidência: ${String(faq.evidence ?? "")}`,
+            typeof faq.suggested_answer === "string" && faq.suggested_answer.trim().length > 0
+              ? `  Resposta sugerida: ${faq.suggested_answer}`
+              : null,
+          ].filter((line): line is string => line !== null),
+        )
+      : ["- Nenhuma FAQ recorrente registrada."]),
+    "",
+    "## Melhorias Recomendadas",
+    "",
+    markdownList(improvementItems).trimEnd(),
+    "",
+    "## Limitações",
+    "",
+    markdownList(report.limitations).trimEnd(),
+    "",
+  ].filter((line): line is string => line !== null);
+
+  return `${lines.join("\n")}\n`;
 }
 
 export async function generateWhatsappHistoryReport(input: {
@@ -392,7 +662,9 @@ export async function generateWhatsappHistoryReport(input: {
       },
       { onConflict: "organization_id,import_id" },
     )
-    .select("id, report_version, summary, metrics, findings, limitations, generated_at, created_at, updated_at")
+    .select(
+      "id, report_version, summary, metrics, findings, limitations, generated_at, created_at, updated_at",
+    )
     .single();
   if (saveError) throw new WhatsappHistoryReportError("database_error", saveError.message);
 
@@ -407,6 +679,219 @@ export async function generateWhatsappHistoryReport(input: {
       import_id: input.importId,
       findings: payload.findings.length,
       messages_sampled: payload.metrics.messages_sampled,
+    },
+  });
+
+  return serializeReport(saved as Record<string, unknown>);
+}
+
+export async function generateWhatsappHistoryAiReport(input: {
+  organizationId: string;
+  importId: string;
+  actorUserId: string;
+  requestId?: string;
+  admin?: AdminClient;
+}): Promise<WhatsappHistoryReportRow> {
+  const admin = input.admin ?? createAdminClient();
+  const { data: importRow, error: importError } = await admin
+    .from("whatsapp_history_imports")
+    .select(
+      "id, organization_id, status, max_chats, max_messages_per_chat, chats_total, chats_imported, messages_seen, messages_imported, media_skipped, groups_skipped, created_at, finished_at",
+    )
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.importId)
+    .maybeSingle();
+  if (importError) throw new WhatsappHistoryReportError("database_error", importError.message);
+  if (!importRow) throw new WhatsappHistoryReportError("not_found", "Importação não encontrada.");
+  const typedImport = importRow as ImportForReport;
+  if (typedImport.status !== "ready") {
+    throw new WhatsappHistoryReportError("not_ready", "A importação precisa estar pronta.");
+  }
+
+  const [{ data: orgRow, error: orgError }, { data: chats, error: chatsError }] = await Promise.all(
+    [
+      admin.from("organizations").select("settings").eq("id", input.organizationId).maybeSingle(),
+      admin
+        .from("whatsapp_history_chats")
+        .select("id, status, messages_seen, messages_imported, media_skipped, last_message_at")
+        .eq("organization_id", input.organizationId)
+        .eq("import_id", input.importId),
+    ],
+  );
+  if (orgError) throw new WhatsappHistoryReportError("database_error", orgError.message);
+  if (chatsError) throw new WhatsappHistoryReportError("database_error", chatsError.message);
+
+  const { data: ruleMessages, error: ruleMessagesError } = await admin
+    .from("whatsapp_history_messages")
+    .select("chat_id, direction, sent_at, has_media")
+    .eq("organization_id", input.organizationId)
+    .eq("import_id", input.importId)
+    .order("sent_at", { ascending: true })
+    .limit(WHATSAPP_HISTORY_REPORT_MESSAGE_SAMPLE);
+  if (ruleMessagesError) {
+    throw new WhatsappHistoryReportError("database_error", ruleMessagesError.message);
+  }
+
+  const rulesReport = buildWhatsappHistoryReport({
+    importRow: typedImport,
+    chats: (chats ?? []) as ChatForReport[],
+    messages: (ruleMessages ?? []) as MessageForReport[],
+    sampledMessages: (ruleMessages ?? []).length,
+  });
+
+  const { data: aiMessages, error: aiMessagesError } = await admin
+    .from("whatsapp_history_messages")
+    .select("chat_id, direction, sent_at, has_media, body_encrypted, body_length, message_type")
+    .eq("organization_id", input.organizationId)
+    .eq("import_id", input.importId)
+    .order("sent_at", { ascending: true })
+    .limit(WHATSAPP_HISTORY_AI_MESSAGE_SAMPLE);
+  if (aiMessagesError) {
+    throw new WhatsappHistoryReportError("database_error", aiMessagesError.message);
+  }
+
+  const transcript = await buildSanitizedTranscript({
+    admin,
+    messages: (aiMessages ?? []) as MessageForAiReport[],
+  });
+  if (transcript.messagesSampled === 0 || transcript.transcript.trim().length === 0) {
+    throw new WhatsappHistoryReportError(
+      "not_enough_data",
+      "Não há mensagens textuais suficientes para análise com IA.",
+    );
+  }
+
+  const settings = readWhatsappHistoryAnalysisSettings(
+    orgRow?.settings as Record<string, unknown> | null,
+  );
+  const resolved = await resolverModeloDoPonto(
+    WHATSAPP_HISTORY_ANALYSIS_PURPOSE,
+    input.organizationId,
+    DEFAULT_CLASSIFIER_MODEL,
+    { naFaltaUsarOPadraoDaOrganizacao: true },
+  );
+  if (!resolved) {
+    throw new WhatsappHistoryReportError(
+      "ai_unavailable",
+      "Nenhum provedor de IA está configurado para analisar o histórico.",
+    );
+  }
+
+  const cfg = gatewayConfig();
+  const headers = cfg ? gatewayHeaders({ organizationId: input.organizationId }) : undefined;
+  const promptInput = buildWhatsappHistoryAiPromptInput({
+    importRow: typedImport,
+    rulesReport,
+    transcript: transcript.transcript,
+    transcriptStats: {
+      messagesSampled: transcript.messagesSampled,
+      chatsSampled: transcript.chatsSampled,
+      charsSent: transcript.charsSent,
+    },
+  });
+
+  const generated = await generateText({
+    model: resolved.model,
+    system: settings.prompt,
+    prompt: promptInput,
+    temperature: 0.2,
+    maxOutputTokens: 2800,
+    maxRetries: 1,
+    headers,
+  });
+
+  const aiReport = parseAiReport(generated.text);
+  const findingMetrics = new Set(aiReport.findings.map((finding) => finding.metric));
+  const findings = [
+    ...aiReport.findings,
+    ...rulesReport.findings.filter((finding) => !findingMetrics.has(finding.metric)).slice(0, 4),
+  ];
+  const usage = generated.usage as
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        promptTokens?: number;
+        completionTokens?: number;
+      }
+    | undefined;
+  const promptTokens = usage?.inputTokens ?? usage?.promptTokens ?? 0;
+  const completionTokens = usage?.outputTokens ?? usage?.completionTokens ?? 0;
+  const limitations = Array.from(
+    new Set([
+      ...aiReport.limitations,
+      ...rulesReport.limitations,
+      "A análise com IA usa amostra sanitizada e pseudonimizada; não substitui revisão humana de casos críticos.",
+      `Foram enviadas ${transcript.messagesSampled} mensagens textuais sanitizadas de até ${WHATSAPP_HISTORY_AI_MESSAGE_SAMPLE} carregadas para IA.`,
+      ...(transcript.encryptedSkipped > 0
+        ? [`${transcript.encryptedSkipped} mensagem(ns) cifrada(s) não puderam ser lidas para IA.`]
+        : []),
+    ]),
+  );
+
+  const modelProvider = resolved.modelId.includes("/")
+    ? (resolved.modelId.split("/")[0] ?? "desconhecido")
+    : "organizacao";
+  const payload: WhatsappHistoryReportPayload = {
+    report_version: WHATSAPP_HISTORY_AI_REPORT_VERSION,
+    summary: aiReport.summary,
+    metrics: {
+      ...rulesReport.metrics,
+      analysis_method: "ai_v1",
+      ai_used: true,
+      ai_provider: modelProvider,
+      ai_model_id: resolved.modelId,
+      ai_model_origin: resolved.origem,
+      ai_prompt_hash: promptHash(settings.prompt),
+      ai_prompt_tokens: promptTokens,
+      ai_completion_tokens: completionTokens,
+      ai_messages_sampled: transcript.messagesSampled,
+      ai_chats_sampled: transcript.chatsSampled,
+      ai_chars_sent: transcript.charsSent,
+      ai_faqs: aiReport.faqs,
+      ai_improvements: aiReport.improvements,
+    },
+    findings,
+    limitations,
+  };
+
+  const generatedAt = new Date().toISOString();
+  const { data: saved, error: saveError } = await admin
+    .from("whatsapp_history_reports")
+    .upsert(
+      {
+        organization_id: input.organizationId,
+        import_id: input.importId,
+        generated_by: input.actorUserId,
+        report_version: payload.report_version,
+        summary: payload.summary,
+        metrics: payload.metrics,
+        findings: payload.findings,
+        limitations: payload.limitations,
+        generated_at: generatedAt,
+      },
+      { onConflict: "organization_id,import_id" },
+    )
+    .select(
+      "id, report_version, summary, metrics, findings, limitations, generated_at, created_at, updated_at",
+    )
+    .single();
+  if (saveError) throw new WhatsappHistoryReportError("database_error", saveError.message);
+
+  void audit({
+    action: "whatsapp_history.report_generated",
+    actorUserId: input.actorUserId,
+    organizationId: input.organizationId,
+    resourceType: "whatsapp_history_report",
+    resourceId: String(saved.id),
+    requestId: input.requestId,
+    metadata: {
+      import_id: input.importId,
+      findings: payload.findings.length,
+      messages_sampled: transcript.messagesSampled,
+      ai_used: true,
+      model_id: resolved.modelId,
+      model_origin: resolved.origem,
+      prompt_hash: payload.metrics.ai_prompt_hash,
     },
   });
 

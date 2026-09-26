@@ -1,6 +1,8 @@
 export const WHATSAPP_HISTORY_EXPORT_DATASETS = ["messages", "chats"] as const;
+export const WHATSAPP_HISTORY_EXPORT_FORMATS = ["csv", "xlsx"] as const;
 
 export type WhatsappHistoryExportDataset = (typeof WHATSAPP_HISTORY_EXPORT_DATASETS)[number];
+export type WhatsappHistoryExportFormat = (typeof WHATSAPP_HISTORY_EXPORT_FORMATS)[number];
 
 export const WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER = [
   "import_id",
@@ -56,8 +58,10 @@ export function csvLine(values: readonly unknown[]): string {
 export function whatsappHistoryExportFilename(input: {
   importId: string;
   dataset: WhatsappHistoryExportDataset;
+  format?: WhatsappHistoryExportFormat;
   generatedAt?: Date;
 }): string {
   const date = (input.generatedAt ?? new Date()).toISOString().slice(0, 10);
-  return `whatsapp-history-${input.importId.slice(0, 8)}-${input.dataset}-${date}.csv`;
+  const format = input.format ?? "csv";
+  return `whatsapp-history-${input.importId.slice(0, 8)}-${input.dataset}-${date}.${format}`;
 }

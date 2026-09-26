@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   csvLine,
   WHATSAPP_HISTORY_CHATS_EXPORT_HEADER,
+  WHATSAPP_HISTORY_EXPORT_FORMATS,
   WHATSAPP_HISTORY_MESSAGES_EXPORT_HEADER,
   whatsappHistoryExportFilename,
 } from "./export";
@@ -32,5 +33,17 @@ describe("exportação CSV do histórico do WhatsApp", () => {
         generatedAt: new Date("2026-09-26T12:00:00Z"),
       }),
     ).toBe("whatsapp-history-aaaaaaaa-messages-2026-09-26.csv");
+    expect(
+      whatsappHistoryExportFilename({
+        importId: "aaaaaaaa-0000-4000-8000-000000000001",
+        dataset: "chats",
+        format: "xlsx",
+        generatedAt: new Date("2026-09-26T12:00:00Z"),
+      }),
+    ).toBe("whatsapp-history-aaaaaaaa-chats-2026-09-26.xlsx");
+  });
+
+  it("declara csv e xlsx como formatos aceitos", () => {
+    expect(WHATSAPP_HISTORY_EXPORT_FORMATS).toEqual(["csv", "xlsx"]);
   });
 });

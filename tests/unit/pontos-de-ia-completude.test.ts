@@ -26,34 +26,48 @@ import ts from "typescript";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  PONTOS_DE_IA,
-  pontosPorPapel,
-  type PontoDeIa,
-} from "@/lib/ai/pontos/registro";
+import { PONTOS_DE_IA, pontosPorPapel, type PontoDeIa } from "@/lib/ai/pontos/registro";
 
 import { arquivosDeCodigo, RAIZ_DO_REPO } from "./helpers/varrer-codigo";
 
 /** Literal values emitted by object properties, including both branches of a conditional.
  * Type declarations, comments and string contents cannot manufacture a call site. */
 function purposesDoTexto(texto: string, arquivo = "source.ts"): string[] {
-  const ast = ts.createSourceFile(arquivo, texto, ts.ScriptTarget.Latest, true, arquivo.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const ast = ts.createSourceFile(
+    arquivo,
+    texto,
+    ts.ScriptTarget.Latest,
+    true,
+    arquivo.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
   const result: string[] = [];
   const literals = (node: ts.Expression): string[] => {
     if (ts.isStringLiteralLike(node)) return [node.text];
-    if (ts.isConditionalExpression(node)) return [...literals(node.whenTrue), ...literals(node.whenFalse)];
-    if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) return literals(node.expression);
+    if (ts.isConditionalExpression(node))
+      return [...literals(node.whenTrue), ...literals(node.whenFalse)];
+    if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node))
+      return literals(node.expression);
     return [];
   };
   const visit = (node: ts.Node) => {
-    if (ts.isPropertyAssignment(node) && node.name.getText(ast).replace(/["']/g, "") === "purpose") {
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(ast).replace(/["']/g, "") === "purpose"
+    ) {
       // NodeResult do follow-up é comando para fila, não ponto de chamada LLM.
       // A distinção vem da forma discriminada retornada, nunca de uma lista
       // de purposes ignorados (que esconderia um LLM homônimo real).
       const object = node.parent;
-      const enqueueResult = ts.isObjectLiteralExpression(object) && ts.isReturnStatement(object.parent) &&
-        object.properties.some(p => ts.isPropertyAssignment(p) && p.name.getText(ast) === "kind" &&
-          ts.isStringLiteralLike(p.initializer) && p.initializer.text === "enqueue_turn");
+      const enqueueResult =
+        ts.isObjectLiteralExpression(object) &&
+        ts.isReturnStatement(object.parent) &&
+        object.properties.some(
+          (p) =>
+            ts.isPropertyAssignment(p) &&
+            p.name.getText(ast) === "kind" &&
+            ts.isStringLiteralLike(p.initializer) &&
+            p.initializer.text === "enqueue_turn",
+        );
       if (!enqueueResult) result.push(...literals(node.initializer));
     }
     ts.forEachChild(node, visit);
@@ -114,20 +128,34 @@ const FORA_DO_SEAM: Record<string, { arquivo: string; marcador: string }> = {
     arquivo: "lib/ai/runtime/agent.ts",
     marcador: "buildModel",
   },
+  whatsapp_history_analysis: {
+    arquivo: "lib/whatsapp-history/report.ts",
+    marcador: "WHATSAPP_HISTORY_ANALYSIS_PURPOSE",
+  },
 };
 
 describe("registro de pontos de IA × código", () => {
   const emitidos = purposesEmitidosNoCodigo();
   it("instrumento lê os dois ramos e aspas distintas sem contar tipos/comentários", () => {
-    expect(purposesDoTexto(`
+    expect(
+      purposesDoTexto(`
       type Input = { purpose: 'nao_emitido' };
       // purpose: 'comentario'
       const a = { purpose: preview ? "agent_preview" : 'agent_turn' };
-    `)).toEqual(["agent_preview", "agent_turn"]);
-    expect(purposesDoTexto(`const a = { purpose: preview ? 'ponto_orfao' : 'agent_turn' };`)).toContain("ponto_orfao");
+    `),
+    ).toEqual(["agent_preview", "agent_turn"]);
+    expect(
+      purposesDoTexto(`const a = { purpose: preview ? 'ponto_orfao' : 'agent_turn' };`),
+    ).toContain("ponto_orfao");
     expect(purposesDoTexto(`const a = { purpose: payload.purpose };`)).toEqual([]);
-    expect(purposesDoTexto(`function queue() { return { kind: "enqueue_turn", purpose: "send_message" }; }`)).toEqual([]);
-    expect(purposesDoTexto(`runModelCall(db, cfg, { purpose: "send_message" });`)).toEqual(["send_message"]);
+    expect(
+      purposesDoTexto(
+        `function queue() { return { kind: "enqueue_turn", purpose: "send_message" }; }`,
+      ),
+    ).toEqual([]);
+    expect(purposesDoTexto(`runModelCall(db, cfg, { purpose: "send_message" });`)).toEqual([
+      "send_message",
+    ]);
   });
 
   it("a varredura enxerga o código (controle positivo)", () => {
@@ -155,7 +183,6 @@ describe("registro de pontos de IA × código", () => {
   });
 
   it("todo ponto do registro é emitido por algum código", () => {
-
     const fantasmas: string[] = [];
     for (const ponto of PONTOS_DE_IA) {
       if (emitidos.has(ponto.id)) continue;
@@ -258,9 +285,7 @@ describe("capacidade exigida", () => {
 describe("agrupamento por papel", () => {
   it("todo ponto configurável cai em algum papel da tela", () => {
     const agrupado = pontosPorPapel();
-    const noAgrupamento = new Set(
-      Object.values(agrupado).flatMap((ps) => ps.map((p) => p.id)),
-    );
+    const noAgrupamento = new Set(Object.values(agrupado).flatMap((ps) => ps.map((p) => p.id)));
     const foraDaTela = PONTOS_DE_IA.filter((p) => !noAgrupamento.has(p.id)).map((p) => p.id);
     expect(foraDaTela, "ponto sem papel não aparece na tela agrupada").toEqual([]);
   });
