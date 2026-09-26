@@ -33,6 +33,13 @@ export type IntegrationRow = {
 
 type Resultado<T> = { ok: true; data: T } | { ok: false; erro: string; status?: number };
 
+export type LinkAssinaturaZapsign = {
+  url: string;
+  signer_token: string | null;
+  status: string | null;
+  nome: string | null;
+};
+
 export type AplicacaoWebhookZapsign = {
   document_token: string | null;
   document_id: string | null;
@@ -382,11 +389,38 @@ function stringDe(obj: Record<string, unknown>, chaves: readonly string[]): stri
   return undefined;
 }
 
+function textoOuNull(valor: unknown): string | null {
+  return typeof valor === "string" && valor.trim().length > 0 ? valor.trim() : null;
+}
+
 function valorDe(obj: Record<string, unknown>, chaves: readonly string[]): unknown {
   for (const chave of chaves) {
     if (obj[chave] !== undefined) return obj[chave];
   }
   return undefined;
+}
+
+export function linksAssinaturaZapsign(signers: unknown): LinkAssinaturaZapsign[] {
+  if (!Array.isArray(signers)) return [];
+  return signers.flatMap((signer) => {
+    const s = objetoRecord(signer);
+    if (!s) return [];
+    const url =
+      stringDe(s, ["sign_url", "signing_url", "assinatura_url", "url_assinatura"]) ??
+      (() => {
+        const token = stringDe(s, ["token", "signer_token"]);
+        return token ? `https://app.zapsign.com.br/verificar/${encodeURIComponent(token)}` : null;
+      })();
+    if (!url) return [];
+    return [
+      {
+        url,
+        signer_token: stringDe(s, ["token", "signer_token"]) ?? null,
+        status: stringDe(s, ["status"]) ?? null,
+        nome: stringDe(s, ["name", "nome"]) ?? null,
+      },
+    ];
+  });
 }
 
 function signatarioDoModelo(signers: unknown[] | undefined): Record<string, unknown> {
@@ -471,6 +505,7 @@ function montarPayloadCriacao(
 }
 
 function documentoLocal(row: Record<string, unknown>) {
+  const signers = row.signers;
   return {
     id: row.id,
     token: row.external_token,
@@ -480,7 +515,8 @@ function documentoLocal(row: Record<string, unknown>) {
     status: row.status,
     lead_id: row.lead_id,
     contact_id: row.contact_id,
-    signers: row.signers,
+    signers,
+    links_assinatura: linksAssinaturaZapsign(signers),
     last_event_type: row.last_event_type,
     last_event_at: row.last_event_at,
     signed_at: row.signed_at,
@@ -541,10 +577,9 @@ export async function criarDocumentoZapsign(
     contact_id: vinculos.data.contactId,
     external_token: token,
     external_open_id: resposta.open_id === undefined ? null : String(resposta.open_id),
-    external_id:
-      typeof resposta.external_id === "string" ? resposta.external_id : (input.externalId ?? null),
-    name: typeof resposta.name === "string" ? resposta.name : (input.nome ?? token),
-    status: typeof resposta.status === "string" ? resposta.status : "pending",
+    external_id: textoOuNull(resposta.external_id) ?? textoOuNull(input.externalId),
+    name: textoOuNull(resposta.name) ?? input.nome ?? token,
+    status: textoOuNull(resposta.status) ?? "pending",
     source: input.source,
     created_by_kind: input.actorKind,
     created_by_ref: input.actorRef ?? null,
@@ -600,7 +635,11 @@ export async function obterDocumentoZapsign(
     consultarRemoto?: boolean;
   },
 ): Promise<
-  Resultado<{ local: ReturnType<typeof documentoLocal> | null; remoto?: ZapSignDocumentSummary }>
+  Resultado<{
+    local: ReturnType<typeof documentoLocal> | null;
+    remoto?: ZapSignDocumentSummary;
+    links_assinatura: LinkAssinaturaZapsign[];
+  }>
 > {
   const { data, error } = await db
     .from("zapsign_documents")
@@ -632,6 +671,9 @@ export async function obterDocumentoZapsign(
     data: {
       local: data ? documentoLocal(data as Record<string, unknown>) : null,
       ...(remoto ? { remoto } : {}),
+      links_assinatura: linksAssinaturaZapsign(
+        remoto?.signers ?? (data as Record<string, unknown> | null)?.signers,
+      ),
     },
   };
 }
@@ -704,8 +746,8 @@ export async function aplicarWebhookZapsign(
     integration_id: input.integration.id,
     external_token: token,
     external_open_id: input.payload.open_id === undefined ? null : String(input.payload.open_id),
-    external_id: typeof input.payload.external_id === "string" ? input.payload.external_id : null,
-    name: typeof input.payload.name === "string" ? input.payload.name : token,
+    external_id: textoOuNull(input.payload.external_id),
+    name: textoOuNull(input.payload.name) ?? token,
     status,
     source: "webhook",
     signers: Array.isArray(input.payload.signers) ? input.payload.signers : [],

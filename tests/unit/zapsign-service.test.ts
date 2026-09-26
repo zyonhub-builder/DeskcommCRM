@@ -7,6 +7,8 @@ const INTEGRATION = "22222222-2222-4222-8222-222222222222";
 const LEAD = "33333333-3333-4333-8333-333333333333";
 const CONTACT = "44444444-4444-4444-8444-444444444444";
 
+let ultimoUpsert: Record<string, unknown> | null = null;
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -31,6 +33,7 @@ class Query {
 
   upsert(patch: Record<string, unknown>): this {
     this.patch = patch;
+    ultimoUpsert = patch;
     return this;
   }
 
@@ -106,6 +109,7 @@ class FakeDb {
 describe("criarDocumentoZapsign", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    ultimoUpsert = null;
   });
 
   it("traduz o primeiro signatário para os campos exigidos pelo endpoint de modelo", async () => {
@@ -155,5 +159,47 @@ describe("criarDocumentoZapsign", () => {
       data: [{ de: "{{Nome}}", para: "Ana Cliente" }],
     });
     expect(payload.signers).toBeUndefined();
+  });
+
+  it("normaliza external_id vazio e expõe link de assinatura para o agente enviar no chat", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () =>
+        json({
+          token: "doc-token",
+          open_id: 10,
+          external_id: "",
+          name: "Contrato de teste",
+          status: "pending",
+          signers: [{ token: "signer-token", name: "Ana Cliente", status: "new" }],
+        }),
+      ),
+    );
+
+    const resultado = await criarDocumentoZapsign(new FakeDb() as never, {
+      organizationId: ORG,
+      actorKind: "ai",
+      actorRef: "run-1",
+      source: "mcp",
+      modo: "modelo",
+      nome: "Contrato de teste",
+      templateId: "tpl-1",
+      templateData: { "{{Nome}}": "Ana Cliente" },
+      signers: [{ name: "Ana Cliente" }],
+      leadId: LEAD,
+      contactId: CONTACT,
+    });
+
+    expect(resultado.ok).toBe(true);
+    expect(ultimoUpsert?.external_id).toBeNull();
+    if (!resultado.ok) return;
+    expect(resultado.data.documento.links_assinatura).toEqual([
+      {
+        url: "https://app.zapsign.com.br/verificar/signer-token",
+        signer_token: "signer-token",
+        status: "new",
+        nome: "Ana Cliente",
+      },
+    ]);
   });
 });

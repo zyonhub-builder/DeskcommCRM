@@ -156,6 +156,8 @@ export const crmCreateZapsignDocument: McpToolDefinition<typeof criarInputShape>
     "`signers` os campos `name`, `email` e `send_automatic_email: true`, além de " +
     "`confirmou_envio_externo: true`. Para modelo, informe `template_id`; para arquivo, informe " +
     "exatamente um entre `url_pdf`, `url_docx` e `base64_pdf`. Não invente dados de signatário. " +
+    "Se `criado: true`, responda no chat com o link de `documento.links_assinatura[0].url`; " +
+    "não diga apenas que enviou por e-mail. " +
     "Se a resposta vier com `criado: false`, não diga que enviou nem que vai confirmar: explique " +
     "que a criação falhou e siga a mensagem de recusa.",
   inputSchema: criarInputShape,
@@ -227,7 +229,8 @@ export const crmGetZapsignDocument: McpToolDefinition<typeof obterInputShape> = 
   description:
     "Consulta um documento da ZapSign pelo token do documento. Sem `consultar_remoto`, lê só o " +
     "espelho local atualizado pelos eventos recebidos. Use `consultar_remoto: true` quando precisar " +
-    "confirmar o estado direto na ZapSign; esta consulta não altera o registro local.",
+    "confirmar o estado direto na ZapSign; esta consulta não altera o registro local. Se a pessoa " +
+    "pedir o link do contrato, use `local.links_assinatura[0].url` ou `links_assinatura[0].url`.",
   inputSchema: obterInputShape,
   category: "read",
   requiresRole: "agent",
@@ -272,7 +275,8 @@ export const crmListZapsignDocuments: McpToolDefinition<typeof listarInputShape>
   description:
     "Lista documentos de assinatura da empresa, do mais recente para o mais antigo. Pode filtrar por " +
     "`status`, `lead_id` ou `contact_id`. Use antes de dizer se um contrato já foi assinado, recusado " +
-    "ou ainda está pendente.",
+    "ou ainda está pendente, e para reenviar o link quando a pessoa pedir. Se houver " +
+    "`links_assinatura`, envie esse link no chat.",
   inputSchema: listarInputShape,
   category: "read",
   requiresRole: "agent",
