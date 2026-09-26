@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Histórico do WhatsApp",
+    "subtitle": "importação temporária em sessão WAHA separada, sem tocar no atendimento",
+    "output": "whatsapp-history.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operacao", "label": "Operação" },
+    { "id": "api", "label": "API" },
+    { "id": "waha", "label": "WAHA NOWEB" },
+    { "id": "worker", "label": "Worker" },
+    { "id": "persistencia", "label": "Persistência" }
+  ],
+  "mainPath": ["tela", "criar", "sessao", "qr", "cron", "overview", "mensagens", "dados", "apagamento"],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "operacao",
+      "col": 1,
+      "type": "ui",
+      "label": "/app/whatsapp-history",
+      "sublabel": "consentimento, limites, QR, progresso e apagar dados"
+    },
+    {
+      "id": "criar",
+      "lane": "api",
+      "col": 2,
+      "type": "route",
+      "label": "POST /api/v1/whatsapp-history/imports",
+      "sublabel": "admin · fullSync exige aceite · cria job tenant-aware"
+    },
+    {
+      "id": "sessao",
+      "lane": "waha",
+      "col": 3,
+      "type": "external",
+      "label": "Sessão hist_*",
+      "sublabel": "descartável · config.noweb.store.enabled=true antes do QR"
+    },
+    {
+      "id": "qr",
+      "lane": "api",
+      "col": 4,
+      "type": "route",
+      "label": "GET imports/:id/qr",
+      "sublabel": "proxy de imagem sem expor X-Api-Key"
+    },
+    {
+      "id": "cron",
+      "lane": "worker",
+      "col": 5,
+      "type": "worker",
+      "label": "cron/whatsapp-history",
+      "sublabel": "paginado, retomável, com lease e expurgo por retenção"
+    },
+    {
+      "id": "overview",
+      "lane": "waha",
+      "col": 6,
+      "type": "external",
+      "label": "GET chats/overview",
+      "sublabel": "descobre chats; grupos e mídias não entram na POC"
+    },
+    {
+      "id": "mensagens",
+      "lane": "waha",
+      "col": 7,
+      "type": "external",
+      "label": "GET chats/:chatId/messages",
+      "sublabel": "limit/offset · downloadMedia=false"
+    },
+    {
+      "id": "dados",
+      "lane": "persistencia",
+      "col": 8,
+      "type": "table",
+      "label": "whatsapp_history_*",
+      "sublabel": "jobs, chats e mensagens cifradas; RLS por organização"
+    },
+    {
+      "id": "atendimento",
+      "lane": "persistencia",
+      "col": 8,
+      "type": "table",
+      "label": "conversations/messages",
+      "sublabel": "não recebe histórico importado"
+    },
+    {
+      "id": "apagamento",
+      "lane": "api",
+      "col": 9,
+      "type": "route",
+      "label": "DELETE imports/:id",
+      "sublabel": "apaga dados locais e tenta remover a sessão temporária"
+    },
+    {
+      "id": "audit",
+      "lane": "persistencia",
+      "col": 9,
+      "type": "table",
+      "label": "api_audit_log",
+      "sublabel": "criar, concluir, falhar, cancelar, expirar e apagar"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "tela", "to": "criar", "label": "inicia com consentimento" },
+    { "id": "e2", "from": "criar", "to": "dados", "label": "grava job" },
+    { "id": "e3", "from": "criar", "to": "sessao", "label": "cria e inicia sessão temporária" },
+    { "id": "e4", "from": "tela", "to": "qr", "label": "mostra QR" },
+    { "id": "e5", "from": "qr", "to": "sessao", "label": "busca imagem" },
+    { "id": "e6", "from": "cron", "to": "dados", "label": "reclama job e atualiza progresso" },
+    { "id": "e7", "from": "cron", "to": "overview", "label": "lista chats" },
+    { "id": "e8", "from": "cron", "to": "mensagens", "label": "busca páginas" },
+    { "id": "e9", "from": "mensagens", "to": "dados", "label": "cifra texto e conta mídia pulada" },
+    { "id": "e10", "from": "dados", "to": "tela", "label": "poll de progresso" },
+    { "id": "e11", "from": "dados", "to": "apagamento", "label": "seleciona importação da org" },
+    { "id": "e12", "from": "apagamento", "to": "sessao", "label": "logout/delete melhor esforço" },
+    { "id": "e13", "from": "apagamento", "to": "dados", "label": "delete cascade" },
+    { "id": "e14", "from": "criar", "to": "audit", "label": "audita início" },
+    { "id": "e15", "from": "cron", "to": "audit", "label": "audita desfechos com efeito" },
+    { "id": "nl1", "from": "dados", "to": "atendimento", "label": "não-ligação: histórico importado não vira atendimento" }
+  ]
+}

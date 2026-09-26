@@ -34,19 +34,27 @@ function espionar(respostas: Record<string, number>) {
     const u = String(url);
     const i = (init ?? {}) as { method?: string; body?: string };
     chamadas.push({ url: u, metodo: i.method ?? "GET", corpo: i.body ? JSON.parse(i.body) : null });
-    const status =
-      Object.entries(respostas).find(([frag]) => u.includes(frag))?.[1] ?? 200;
+    const status = Object.entries(respostas).find(([frag]) => u.includes(frag))?.[1] ?? 200;
     return {
       ok: status >= 200 && status < 300,
       status,
-      json: async () => ({ name: "s1", status: "SCAN_QR_CODE", config: { ignore: CONVERSAS_IGNORADAS }, engine: { engine: "NOWEB" } }),
+      json: async () => ({
+        name: "s1",
+        status: "SCAN_QR_CODE",
+        config: { ignore: CONVERSAS_IGNORADAS },
+        engine: { engine: "NOWEB" },
+      }),
       text: async (): Promise<string> => "",
     };
   }) as unknown as typeof fetch;
 }
 
-beforeEach(() => { chamadas = []; });
-afterEach(() => { globalThis.fetch = fetchOriginal; });
+beforeEach(() => {
+  chamadas = [];
+});
+afterEach(() => {
+  globalThis.fetch = fetchOriginal;
+});
 
 describe("a sessão nasce ignorando o que o CRM não atende", () => {
   it("a criação leva as quatro categorias", async () => {
@@ -54,8 +62,74 @@ describe("a sessão nasce ignorando o que o CRM não atende", () => {
     await new WahaClient("http://w", "k").startSession("s1");
     const criacao = chamadas.find((c) => c.url.endsWith("/api/sessions") && c.metodo === "POST");
     expect((criacao?.corpo as { config?: { ignore?: unknown } })?.config?.ignore).toEqual({
-      status: true, broadcast: true, channels: true, groups: true,
+      status: true,
+      broadcast: true,
+      channels: true,
+      groups: true,
     });
+  });
+
+  it("a sessão de histórico nasce com NOWEB store ligado antes do QR", async () => {
+    globalThis.fetch = vi.fn(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      const i = (init ?? {}) as { method?: string; body?: string };
+      chamadas.push({
+        url: u,
+        metodo: i.method ?? "GET",
+        corpo: i.body ? JSON.parse(i.body) : null,
+      });
+      return {
+        ok: true,
+        status: u.endsWith("/start") ? 201 : 200,
+        json: async () => ({
+          name: "hist_s1",
+          status: u.endsWith("/start") ? "STARTING" : "SCAN_QR_CODE",
+          config: {
+            ignore: CONVERSAS_IGNORADAS,
+            noweb: { store: { enabled: true } },
+          },
+          engine: { engine: "NOWEB" },
+        }),
+        text: async (): Promise<string> => "",
+      };
+    }) as unknown as typeof fetch;
+
+    await new WahaClient("http://w", "k").startHistorySession("hist_s1");
+    const criacao = chamadas.find((c) => c.url.endsWith("/api/sessions") && c.metodo === "POST");
+    const config = (criacao?.corpo as { config?: Record<string, unknown> })?.config;
+    expect(config?.ignore).toEqual(CONVERSAS_IGNORADAS);
+    expect(config?.noweb).toEqual({ store: { enabled: true } });
+  });
+
+  it("full sync só entra quando pedido explicitamente", async () => {
+    globalThis.fetch = vi.fn(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      const i = (init ?? {}) as { method?: string; body?: string };
+      chamadas.push({
+        url: u,
+        metodo: i.method ?? "GET",
+        corpo: i.body ? JSON.parse(i.body) : null,
+      });
+      return {
+        ok: true,
+        status: u.endsWith("/start") ? 201 : 200,
+        json: async () => ({
+          name: "hist_s2",
+          status: u.endsWith("/start") ? "STARTING" : "SCAN_QR_CODE",
+          config: {
+            ignore: CONVERSAS_IGNORADAS,
+            noweb: { store: { enabled: true, fullSync: true } },
+          },
+          engine: { engine: "NOWEB" },
+        }),
+        text: async (): Promise<string> => "",
+      };
+    }) as unknown as typeof fetch;
+
+    await new WahaClient("http://w", "k").startHistorySession("hist_s2", { fullSync: true });
+    const criacao = chamadas.find((c) => c.url.endsWith("/api/sessions") && c.metodo === "POST");
+    const config = (criacao?.corpo as { config?: { noweb?: unknown } })?.config;
+    expect(config?.noweb).toEqual({ store: { enabled: true, fullSync: true } });
   });
 
   it("os estados são a categoria que mais pesava — não podem sair da lista", () => {
@@ -75,12 +149,36 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
       const m = i2.method ?? "GET";
       vistos.push({ metodo: m, corpo: i2.body ? JSON.parse(i2.body) : null });
       if (m === "POST" && u.endsWith("/api/sessions")) {
-        return { ok: false, status: 422, json: async () => ({ statusCode: 422, error: "Unprocessable Entity", message: "Session 's1' already exists. Use PUT to update it." }), text: async (): Promise<string> => "" };
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            statusCode: 422,
+            error: "Unprocessable Entity",
+            message: "Session 's1' already exists. Use PUT to update it.",
+          }),
+          text: async (): Promise<string> => "",
+        };
       }
       if (m === "GET") {
-        return { ok: true, status: 200, json: async () => ({ name: "s1", status: "WORKING", engine: { engine: "NOWEB" }, config: configAtual }), text: async (): Promise<string> => "" };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            name: "s1",
+            status: "WORKING",
+            engine: { engine: "NOWEB" },
+            config: configAtual,
+          }),
+          text: async (): Promise<string> => "",
+        };
       }
-      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async (): Promise<string> => "" };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "WORKING" }),
+        text: async (): Promise<string> => "",
+      };
     }) as unknown as typeof fetch;
     return vistos;
   }
@@ -105,7 +203,10 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
     // restart por rodada seria pior que o gasto que ele evita.
     const vistos = comSessao({ webhooks: WEBHOOKS, ignore: { ...CONVERSAS_IGNORADAS } });
     await new WahaClient("http://w", "k").startSession("s1");
-    expect(vistos.some((v) => v.metodo === "PUT"), "reiniciou a sessão à toa").toBe(false);
+    expect(
+      vistos.some((v) => v.metodo === "PUT"),
+      "reiniciou a sessão à toa",
+    ).toBe(false);
   });
 
   it("se não conseguir LER a config, não escreve nada", async () => {
@@ -116,13 +217,42 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
       const m = ((init ?? {}) as { method?: string }).method ?? "GET";
       vistos.push({ metodo: m });
       if (m === "POST" && String(url).endsWith("/api/sessions")) {
-        return { ok: false, status: 422, json: async () => ({ statusCode: 422, error: "Unprocessable Entity", message: "Session 's1' already exists. Use PUT to update it." }), text: async (): Promise<string> => "" };
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            statusCode: 422,
+            error: "Unprocessable Entity",
+            message: "Session 's1' already exists. Use PUT to update it.",
+          }),
+          text: async (): Promise<string> => "",
+        };
       }
-      if (m === "GET") return { ok: false, status: 500, json: async () => ({ statusCode: 500, error: "Internal Server Error", message: "unavailable" }), text: async (): Promise<string> => "" };
-      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async (): Promise<string> => "" };
+      if (m === "GET")
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({
+            statusCode: 500,
+            error: "Internal Server Error",
+            message: "unavailable",
+          }),
+          text: async (): Promise<string> => "",
+        };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "WORKING" }),
+        text: async (): Promise<string> => "",
+      };
     }) as unknown as typeof fetch;
-    await expect(new WahaClient("http://w", "k").startSession("s1")).rejects.toThrow("waha_create_500");
-    expect(vistos.some((v) => v.metodo === "PUT"), "escreveu às cegas").toBe(false);
+    await expect(new WahaClient("http://w", "k").startSession("s1")).rejects.toThrow(
+      "waha_create_500",
+    );
+    expect(
+      vistos.some((v) => v.metodo === "PUT"),
+      "escreveu às cegas",
+    ).toBe(false);
   });
 
   it("falha da convergência não impede a sessão de iniciar", async () => {
@@ -134,12 +264,35 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
       if (m === "GET") {
         gets += 1;
         if (gets === 2) throw new Error("ECONNRESET");
-        return { ok: true, status: 200, json: async () => ({ name: "s1", status: "WORKING", config: { webhooks: WEBHOOKS }, engine: { engine: "NOWEB" } }) };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            name: "s1",
+            status: "WORKING",
+            config: { webhooks: WEBHOOKS },
+            engine: { engine: "NOWEB" },
+          }),
+        };
       }
       if (m === "POST" && String(url).endsWith("/api/sessions")) {
-        return { ok: false, status: 422, json: async () => ({ statusCode: 422, error: "Unprocessable Entity", message: "Session 's1' already exists. Use PUT to update it." }), text: async (): Promise<string> => "" };
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            statusCode: 422,
+            error: "Unprocessable Entity",
+            message: "Session 's1' already exists. Use PUT to update it.",
+          }),
+          text: async (): Promise<string> => "",
+        };
       }
-      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async (): Promise<string> => "" };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "WORKING" }),
+        text: async (): Promise<string> => "",
+      };
     }) as unknown as typeof fetch;
     await expect(new WahaClient("http://w", "k").startSession("s1")).resolves.toBeTruthy();
   });

@@ -38,6 +38,7 @@ ser fonte sem ninguém decidir isso.
 | `extensoes-declarativas.architecture.json` | perfil declarativo: catálogo de ensaio, admissão, recibos, arquivo local, ativação por organização, guia no CRM, as trocas de versão (atualizar e desfazer a última troca), a remoção da instalação e a auditoria da organização; o estado das provas fica no `contracts.status` do próprio mapa |
 | `banco-de-dados-externo.architecture.json` | banco externo (migration 0372, recorte do PR #1130 de @vgamkt) — 14 peças, 19 arestas, 4 faixas; o cadastro por admin e a leitura por todos, a view `_safe` como única superfície da tela, a guarda de rede revalidada a CADA abertura de pool, e a **não-ligação declarada**: as tools do agente ficaram no PR de origem e entram num segundo recorte |
 | `zapsign-integracao.architecture.json` | assinatura eletrônica por ZapSign — módulo opcional, credencial por organização, criação pela IA ou tela tenant, webhook de retorno e visibilidade no Inbox/dossiê sem expor signatários |
+| `whatsapp-history.architecture.json` | importação temporária do histórico do WhatsApp — sessão WAHA separada com store NOWEB, worker paginado/retomável, tabelas cifradas com retenção e a **não-ligação declarada** com Inbox/IA/follow-up |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que

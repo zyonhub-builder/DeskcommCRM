@@ -111,6 +111,8 @@ beforeAll(() => {
       v_sale uuid;
       v_camp    uuid;
       v_sale_item uuid;
+      v_history_import uuid;
+      v_history_chat uuid;
     begin
       foreach v_org in array array['${ORG_A}'::uuid, '${ORG_B}'::uuid] loop
         select id into v_sess from public.channel_sessions where organization_id = v_org limit 1;
@@ -470,6 +472,42 @@ beforeAll(() => {
                     'RLS invariant assinatura', 'pending', 'api');
         end if;
 
+        -- 0412 — histórico do WhatsApp importado para análise. Guarda texto
+        -- cifrado e identificadores remotos hasheados/cifrados; vazar a linha
+        -- entrega que houve uma importação e volume de conversas do vizinho.
+        select id into v_history_import
+          from public.whatsapp_history_imports where organization_id = v_org limit 1;
+        if v_history_import is null then
+          insert into public.whatsapp_history_imports
+            (organization_id, created_by, status, transport_session_name, retention_until)
+            values (
+              v_org,
+              case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end,
+              'ready',
+              'hist_rls_' || replace(v_org::text, '-', ''),
+              now() + interval '30 days'
+            )
+            returning id into v_history_import;
+        end if;
+
+        select id into v_history_chat
+          from public.whatsapp_history_chats
+          where organization_id = v_org and import_id = v_history_import
+          limit 1;
+        if v_history_chat is null then
+          insert into public.whatsapp_history_chats
+            (organization_id, import_id, chat_id_hash, chat_id_encrypted, status)
+            values (v_org, v_history_import, md5(v_org::text || ':chat'), '\\x00'::bytea, 'done')
+            returning id into v_history_chat;
+        end if;
+
+        if not exists (select 1 from public.whatsapp_history_messages where organization_id = v_org) then
+          insert into public.whatsapp_history_messages
+            (organization_id, import_id, chat_id, external_id_hash, body_encrypted, body_length, direction)
+            values (v_org, v_history_import, v_history_chat, md5(v_org::text || ':message'),
+                    '\\x00'::bytea, 14, 'inbound');
+        end if;
+
         -- migrations 0374/0375 -- a campanha e quem ela alcancou. A tabela
         -- campaigns NAO entra na lista de TABLES porque nao tem FK para
         -- contacts; as duas que guardam pessoa, sim. channel_session_id e
@@ -632,6 +670,13 @@ export const TABLES = [
   // migration 0411 — documentos de assinatura eletrônica. Guarda status,
   // signatários e ponteiros para cliente/negócio, com leitura org-scoped.
   "zapsign_documents",
+  // migration 0412 — histórico importado do WhatsApp para análise posterior.
+  // As três tabelas guardam job, fila de chats e conteúdo cifrado; mesmo sem
+  // plaintext visível, vazar contadores e metadados do vizinho já revela volume
+  // e existência de conversas importadas.
+  "whatsapp_history_imports",
+  "whatsapp_history_chats",
+  "whatsapp_history_messages",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"
