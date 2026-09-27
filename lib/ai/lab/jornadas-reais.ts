@@ -310,7 +310,7 @@ export async function listarLaboratorioDeJornadas(
       .limit(25),
     db
       .from("channel_sessions")
-      .select("id,label,status,phone_number")
+      .select("id,display_name,status,phone_number,waha_session_name,provider")
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("created_at", { ascending: false }),
@@ -324,11 +324,37 @@ export async function listarLaboratorioDeJornadas(
     runs: linhas(runs).map(parseRodada),
     channels: linhas(channels).map((c) => ({
       id: String(c.id),
-      label: typeof c.label === "string" && c.label.trim() ? c.label : "Canal sem nome",
+      label: rotuloDoCanal(c),
       status: typeof c.status === "string" ? c.status : null,
       phone_number: typeof c.phone_number === "string" ? c.phone_number : null,
     })),
   };
+}
+
+function textoDaLinha(row: Record<string, unknown>, key: string): string | null {
+  const value = row[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function rotuloDoCanal(row: Record<string, unknown>): string {
+  const displayName = textoDaLinha(row, "display_name");
+  if (displayName) return displayName;
+
+  const provider = textoDaLinha(row, "provider");
+  const providerLabel: Record<string, string> = {
+    datafy: "Datafy",
+    meta_cloud: "WhatsApp Oficial",
+    wacalls: "Chamadas WhatsApp",
+    waha: "WhatsApp",
+    zernio: "Zernio",
+    zernio_social: "Zernio Social",
+  };
+  if (provider && providerLabel[provider]) return providerLabel[provider];
+
+  const sessionName = textoDaLinha(row, "waha_session_name");
+  if (sessionName) return sessionName;
+
+  return "Canal sem nome";
 }
 
 export async function salvarCenarioDaJornada(

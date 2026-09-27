@@ -11,6 +11,7 @@ vi.mock("@/lib/waha/ingest", () => ({
 import {
   cenarioJornadaSchema,
   iniciarRodadaSchema,
+  listarLaboratorioDeJornadas,
   materializarPassosDaRodada,
   type CenarioDaJornada,
 } from "@/lib/ai/lab/jornadas-reais";
@@ -32,6 +33,44 @@ function cenario(overrides: Partial<CenarioDaJornada> = {}): CenarioDaJornada {
     updated_at: "2026-09-27T12:00:00.000Z",
     ...overrides,
   };
+}
+
+type RespostaFake = { data: unknown; error: null };
+
+class ConsultaFake implements PromiseLike<RespostaFake> {
+  constructor(
+    private readonly table: string,
+    private readonly selects: Map<string, string>,
+    private readonly data: unknown,
+  ) {}
+
+  select(columns: string): this {
+    this.selects.set(this.table, columns);
+    return this;
+  }
+
+  eq(): this {
+    return this;
+  }
+
+  is(): this {
+    return this;
+  }
+
+  order(): this {
+    return this;
+  }
+
+  limit(): this {
+    return this;
+  }
+
+  then<TResult1 = RespostaFake, TResult2 = never>(
+    onfulfilled?: ((value: RespostaFake) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2> {
+    return Promise.resolve({ data: this.data, error: null }).then(onfulfilled, onrejected);
+  }
 }
 
 describe("laboratório de jornadas reais", () => {
@@ -81,5 +120,46 @@ describe("laboratório de jornadas reais", () => {
     });
 
     expect(parsed.reset_existing_contact).toBe(false);
+  });
+
+  it("lista conexões usando colunas reais de channel_sessions", async () => {
+    const selects = new Map<string, string>();
+    const respostas: Record<string, unknown> = {
+      ai_lab_runs: [],
+      ai_lab_scenarios: [],
+      channel_sessions: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          display_name: "Talismã WhatsApp",
+          status: "WORKING",
+          phone_number: "+551151770706",
+          waha_session_name: "talismã-dev",
+          provider: "waha",
+        },
+      ],
+    };
+    const client = {
+      from(table: string) {
+        return new ConsultaFake(table, selects, respostas[table] ?? []);
+      },
+    };
+
+    const result = await listarLaboratorioDeJornadas(
+      client as never,
+      "22222222-2222-4222-8222-222222222222",
+    );
+
+    expect(selects.get("channel_sessions")).toBe(
+      "id,display_name,status,phone_number,waha_session_name,provider",
+    );
+    expect(selects.get("channel_sessions")).not.toContain("label");
+    expect(result.channels).toEqual([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        label: "Talismã WhatsApp",
+        phone_number: "+551151770706",
+        status: "WORKING",
+      },
+    ]);
   });
 });
