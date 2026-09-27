@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Laboratório de Jornadas Reais",
+    "subtitle": "cenários de teste por organização, mensagens reais via ingest WAHA, observação de efeitos e relatório da rodada",
+    "output": "laboratorio-jornadas-reais.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operacao", "label": "Operação" },
+    { "id": "api", "label": "API" },
+    { "id": "worker", "label": "Scheduler" },
+    { "id": "canal", "label": "Canal" },
+    { "id": "atendimento", "label": "Atendimento Vivo" },
+    { "id": "persistencia", "label": "Persistência" }
+  ],
+  "mainPath": [
+    "tela",
+    "cenarioApi",
+    "cenarios",
+    "rodadaApi",
+    "rodadas",
+    "cron",
+    "ingest",
+    "eventLog",
+    "efeitos",
+    "relatorio"
+  ],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "operacao",
+      "col": 1,
+      "type": "ui",
+      "label": "/app/ai/lab",
+      "sublabel": "admin · só ambiente de teste · cria cenário, inicia rodada, acompanha e baixa relatório"
+    },
+    {
+      "id": "cenarioApi",
+      "lane": "api",
+      "col": 2,
+      "type": "route",
+      "label": "GET/POST /api/v1/ai/lab/scenarios",
+      "sublabel": "admin · Zod · org ativa da sessão · audit ai_lab.scenario_saved"
+    },
+    {
+      "id": "rodadaApi",
+      "lane": "api",
+      "col": 3,
+      "type": "route",
+      "label": "POST /api/v1/ai/lab/runs",
+      "sublabel": "admin · reset opcional do contato de teste · cria rodada queued"
+    },
+    {
+      "id": "controleApi",
+      "lane": "api",
+      "col": 4,
+      "type": "route",
+      "label": "POST runs/:id/cancel|complete",
+      "sublabel": "encerra manualmente, gera relatório e audita a decisão"
+    },
+    {
+      "id": "cron",
+      "lane": "worker",
+      "col": 5,
+      "type": "worker",
+      "label": "cron/ai-lab-runs",
+      "sublabel": "minuto a minuto · só age em DEV/local · rodada vazia não audita"
+    },
+    {
+      "id": "ingest",
+      "lane": "canal",
+      "col": 6,
+      "type": "route",
+      "label": "dispatchWahaEvent",
+      "sublabel": "envelope WAHA com external_id determinístico por rodada/passo"
+    },
+    {
+      "id": "eventLog",
+      "lane": "atendimento",
+      "col": 7,
+      "type": "table",
+      "label": "event_log",
+      "sublabel": "message.received real; o agente responde pelo mesmo caminho de produção"
+    },
+    {
+      "id": "efeitos",
+      "lane": "atendimento",
+      "col": 8,
+      "type": "table",
+      "label": "messages, ai_agent_runs, zapsign_documents, calendar_appointments",
+      "sublabel": "efeitos reais observados depois do roteiro"
+    },
+    {
+      "id": "cenarios",
+      "lane": "persistencia",
+      "col": 3,
+      "type": "table",
+      "label": "ai_lab_scenarios",
+      "sublabel": "tenant-aware · telefone, canal, passos, atraso e janela de observação"
+    },
+    {
+      "id": "rodadas",
+      "lane": "persistencia",
+      "col": 4,
+      "type": "table",
+      "label": "ai_lab_runs",
+      "sublabel": "script materializado, próximo passo, status, contato e relatório final"
+    },
+    {
+      "id": "eventos",
+      "lane": "persistencia",
+      "col": 5,
+      "type": "table",
+      "label": "ai_lab_run_events",
+      "sublabel": "linha técnica da rodada: início, mensagens, observação, falha e conclusão"
+    },
+    {
+      "id": "relatorio",
+      "lane": "persistencia",
+      "col": 9,
+      "type": "table",
+      "label": "ai_lab_runs.report",
+      "sublabel": "contagens, tempos, transcrição, efeitos e achados baixáveis em Markdown"
+    },
+    {
+      "id": "audit",
+      "lane": "persistencia",
+      "col": 9,
+      "type": "table",
+      "label": "api_audit_log",
+      "sublabel": "cenário salvo, rodada iniciada/cancelada/concluída e worker com efeito"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "tela", "to": "cenarioApi", "label": "salva roteiro" },
+    { "id": "e2", "from": "cenarioApi", "to": "cenarios", "label": "grava por org" },
+    { "id": "e3", "from": "tela", "to": "rodadaApi", "label": "inicia rodada" },
+    { "id": "e4", "from": "rodadaApi", "to": "rodadas", "label": "materializa script" },
+    { "id": "e5", "from": "rodadaApi", "to": "eventos", "label": "run_started" },
+    { "id": "e6", "from": "cron", "to": "rodadas", "label": "busca próximo passo vencido" },
+    { "id": "e7", "from": "cron", "to": "ingest", "label": "envia mensagem simulada do cliente" },
+    { "id": "e8", "from": "ingest", "to": "eventLog", "label": "publica evento real" },
+    { "id": "e9", "from": "eventLog", "to": "efeitos", "label": "workers do atendimento agem" },
+    { "id": "e10", "from": "cron", "to": "eventos", "label": "registra passo/falha" },
+    { "id": "e11", "from": "efeitos", "to": "relatorio", "label": "resume após janela de observação" },
+    { "id": "e12", "from": "controleApi", "to": "relatorio", "label": "conclusão manual" },
+    { "id": "e13", "from": "tela", "to": "controleApi", "label": "cancelar ou gerar relatório" },
+    { "id": "e14", "from": "cenarioApi", "to": "audit", "label": "audita configuração" },
+    { "id": "e15", "from": "rodadaApi", "to": "audit", "label": "audita início" },
+    { "id": "e16", "from": "controleApi", "to": "audit", "label": "audita decisão" },
+    { "id": "e17", "from": "cron", "to": "audit", "label": "audita tick com efeito" }
+  ]
+}

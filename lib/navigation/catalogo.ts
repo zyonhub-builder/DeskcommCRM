@@ -426,7 +426,8 @@ export const NAV_CATALOG = [
     // e na busca, e quem usa pode pô-la no menu dela.
     href: "/app/ai/atendimento",
     label: "Fluxos de atendimento",
-    description: "Perguntas que a IA conduz durante a conversa, com as respostas guardadas na ficha do cliente.",
+    description:
+      "Perguntas que a IA conduz durante a conversa, com as respostas guardadas na ficha do cliente.",
     icon: "ListChecks",
     group: "ia",
     section: "Montar o agente",
@@ -466,7 +467,8 @@ export const NAV_CATALOG = [
     label: "Provedores",
     // O "Jev" vem cedo: o ⌘K mostra só o começo da descrição, e a versão
     // longa cortava antes do nome — quem procurava "jev" achava, mas não via por quê.
-    description: "Ligue o Jev para decisões rápidas e escolha qual inteligência atende cada parte do sistema.",
+    description:
+      "Ligue o Jev para decisões rápidas e escolha qual inteligência atende cada parte do sistema.",
     icon: "Plugs",
     group: "ia",
     section: "Montar o agente",
@@ -564,6 +566,16 @@ export const NAV_CATALOG = [
     minRole: "manager",
     // Idem: fora da sidebar para o menu não passar da dobra. Quem vem para cá
     // está diagnosticando, e chega pelo hub ou pelo link do aviso na Central.
+  },
+  {
+    href: "/app/ai/lab",
+    label: "Laboratório",
+    description:
+      "Rode conversas reais de teste, no tempo de uma pessoa, e compare o que aconteceu.",
+    icon: "ClockCounterClockwise",
+    group: "ia",
+    section: "Acompanhar o agente",
+    minRole: "admin",
   },
   {
     href: "/app/ai/usage",
@@ -715,7 +727,8 @@ export const NAV_CATALOG = [
     // canto do Audit Log, não em Conexões, porque não é canal de atendimento.
     href: "/app/whatsapp-history",
     label: "Histórico do WhatsApp",
-    description: "Importações temporárias para analisar conversas antigas sem tocar no atendimento.",
+    description:
+      "Importações temporárias para analisar conversas antigas sem tocar no atendimento.",
     icon: "WhatsappLogo",
     group: "analise",
     section: "O histórico que se consulta",

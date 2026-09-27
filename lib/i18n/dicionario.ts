@@ -1058,6 +1058,10 @@ export const DICIONARIO: Traducoes = {
   "O que a IA fez — e, quando falhou, o que aconteceu e o que fazer.": {
     es: "Lo que hizo la IA y, cuando falló, qué ocurrió y qué hacer.",
   },
+  Laboratório: { es: "Laboratorio" },
+  "Rode conversas reais de teste, no tempo de uma pessoa, e compare o que aconteceu.": {
+    es: "Ejecuta conversaciones reales de prueba, al ritmo de una persona, y compara lo ocurrido.",
+  },
   "Uso e orçamento": { es: "Uso y presupuesto" },
   "Quanto a IA consumiu e qual é o teto de gasto do mês.": {
     es: "Cuánto consumió la IA y cuál es el límite de gasto del mes.",
