@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { resetarContatoDeTeste } from "@/lib/contacts/resetar-contato-de-teste";
-import { dispatchWahaEvent, type WahaEnvelope } from "@/lib/waha/ingest";
+import { dispatchWahaEvent, type SessionStatusRow, type WahaEnvelope } from "@/lib/waha/ingest";
 
 type LinhaGenerica = Record<string, unknown>;
 type TabelaGenerica = {
@@ -13,14 +13,17 @@ type TabelaGenerica = {
   Update: LinhaGenerica;
   Relationships: [];
 };
-type SchemaGenerico = {
-  Tables: Record<string, TabelaGenerica>;
-  Views: Record<string, TabelaGenerica>;
-  Functions: Record<string, never>;
-  Enums: Record<string, never>;
-  CompositeTypes: Record<string, never>;
+type DatabaseGenerico = {
+  __InternalSupabase: { PostgrestVersion: "12" };
+  public: {
+    Tables: Record<string, TabelaGenerica>;
+    Views: Record<string, TabelaGenerica>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
 };
-type AnyClient = SupabaseClient<{ public: SchemaGenerico }, "public", SchemaGenerico>;
+type AnyClient = SupabaseClient<DatabaseGenerico>;
 
 const telefoneSchema = z
   .string()
@@ -177,6 +180,14 @@ function anyDb(client: SupabaseClient): AnyClient {
   return client as unknown as AnyClient;
 }
 
+function linhas(data: unknown): Record<string, unknown>[] {
+  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+}
+
+function linha(data: unknown): Record<string, unknown> | null {
+  return data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+}
+
 function erroCurto(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   return message.split("\n", 1)[0]?.slice(0, 300) ?? "erro_desconhecido";
@@ -309,9 +320,9 @@ export async function listarLaboratorioDeJornadas(
   if (channelsErr) throw new Error(channelsErr.message);
 
   return {
-    scenarios: ((scenarios ?? []) as Record<string, unknown>[]).map(parseCenario),
-    runs: ((runs ?? []) as Record<string, unknown>[]).map(parseRodada),
-    channels: ((channels ?? []) as Array<Record<string, unknown>>).map((c) => ({
+    scenarios: linhas(scenarios).map(parseCenario),
+    runs: linhas(runs).map(parseRodada),
+    channels: linhas(channels).map((c) => ({
       id: String(c.id),
       label: typeof c.label === "string" && c.label.trim() ? c.label : "Canal sem nome",
       status: typeof c.status === "string" ? c.status : null,
@@ -353,7 +364,7 @@ export async function salvarCenarioDaJornada(
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   if (!data) throw new Error("cenario_nao_encontrado");
-  return parseCenario(data as Record<string, unknown>);
+  return parseCenario(linha(data) ?? {});
 }
 
 async function contatoPorTelefone(
@@ -369,7 +380,8 @@ async function contatoPorTelefone(
     .is("is_merged_into", null)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return typeof data?.id === "string" ? data.id : null;
+  const row = linha(data);
+  return typeof row?.id === "string" ? row.id : null;
 }
 
 export async function iniciarRodadaDaJornada(
@@ -387,7 +399,7 @@ export async function iniciarRodadaDaJornada(
     .maybeSingle();
   if (scenarioErr) throw new Error(scenarioErr.message);
   if (!scenarioRow) throw new Error("cenario_nao_encontrado");
-  const scenario = parseCenario(scenarioRow as Record<string, unknown>);
+  const scenario = parseCenario(linha(scenarioRow) ?? {});
   if (!scenario.is_active) throw new Error("cenario_inativo");
 
   if (input.reset_existing_contact) {
@@ -419,7 +431,7 @@ export async function iniciarRodadaDaJornada(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("rodada_nao_criada");
-  const run = parseRodada(data as Record<string, unknown>);
+  const run = parseRodada(linha(data) ?? {});
   await registrarEvento(db, {
     organizationId,
     runId: run.id,
@@ -533,7 +545,7 @@ export async function enviarProximoPassoDaRodada(
 
     await dispatchWahaEvent(
       db,
-      channel as never,
+      channel as SessionStatusRow,
       envelope,
       `lab-${run.id}-${run.current_step_index}`,
     );
@@ -543,6 +555,7 @@ export async function enviarProximoPassoDaRodada(
       .eq("organization_id", run.organization_id)
       .eq("external_id", externalId)
       .maybeSingle();
+    const messageRow = linha(message);
 
     const sentAt = now.toISOString();
     const nextIndex = run.current_step_index + 1;
@@ -554,7 +567,8 @@ export async function enviarProximoPassoDaRodada(
       next_step_at: nextStep
         ? new Date(now.getTime() + (step.delay_seconds ?? 120) * 1000).toISOString()
         : null,
-      contact_id: typeof message?.contact_id === "string" ? message.contact_id : run.contact_id,
+      contact_id:
+        typeof messageRow?.contact_id === "string" ? messageRow.contact_id : run.contact_id,
     };
 
     if (!nextStep && run.observation_seconds > 0) {
@@ -579,10 +593,10 @@ export async function enviarProximoPassoDaRodada(
       body: step.body,
       details: {
         external_id: externalId,
-        message_id: typeof message?.id === "string" ? message.id : null,
-        contact_id: typeof message?.contact_id === "string" ? message.contact_id : null,
+        message_id: typeof messageRow?.id === "string" ? messageRow.id : null,
+        contact_id: typeof messageRow?.contact_id === "string" ? messageRow.contact_id : null,
         conversation_id:
-          typeof message?.conversation_id === "string" ? message.conversation_id : null,
+          typeof messageRow?.conversation_id === "string" ? messageRow.conversation_id : null,
         next_step_at: patch.next_step_at ?? null,
       },
     });
@@ -779,7 +793,7 @@ export async function concluirRodadaDaJornada(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("rodada_nao_encontrada");
-  const run = parseRodada(data as Record<string, unknown>);
+  const run = parseRodada(linha(data) ?? {});
   const report = await gerarRelatorioDaRodada(client, run, now);
   const completedAt = now.toISOString();
   const { data: updated, error: updateErr } = await db
@@ -809,7 +823,7 @@ export async function concluirRodadaDaJornada(
     kind: "run_completed",
     details: { duration_seconds: report.duration_seconds },
   });
-  return parseRodada(updated as Record<string, unknown>);
+  return parseRodada(linha(updated) ?? {});
 }
 
 export async function cancelarRodadaDaJornada(
@@ -847,7 +861,7 @@ export async function executarTickDoLaboratorioDeJornadas(
   if (error) throw new Error(error.message);
 
   const summary = { sent: 0, observing: 0, completed: 0, failed: 0 };
-  for (const row of (dueRuns ?? []) as Record<string, unknown>[]) {
+  for (const row of linhas(dueRuns)) {
     const result = await enviarProximoPassoDaRodada(client, parseRodada(row), now);
     if (result === "sent") summary.sent += 1;
     if (result === "observing") summary.observing += 1;
