@@ -9,6 +9,10 @@ export type ResetContatoDeTesteCountKey =
   | "ai_agent_runs"
   | "ai_invocations"
   | "llm_calls"
+  | "lead_checkpoints"
+  | "lead_notes"
+  | "lead_state"
+  | "lead_state_transitions"
   | "before_send_traces"
   | "send_ledger"
   | "job_queue"
@@ -50,6 +54,10 @@ function contagensZeradas(): ContagensDoResetDeContatoDeTeste {
     ai_agent_runs: 0,
     ai_invocations: 0,
     llm_calls: 0,
+    lead_checkpoints: 0,
+    lead_notes: 0,
+    lead_state: 0,
+    lead_state_transitions: 0,
     before_send_traces: 0,
     send_ledger: 0,
     job_queue: 0,
@@ -334,6 +342,38 @@ export async function resetarContatoDeTeste(
   const compromissos = await selecionarCompromissos(client, input.organizationId, input.contactId);
   if (!compromissos.ok) return falha(counts, "dependencies_read", compromissos.details);
 
+  const checkpoints = await selecionarIdsPorContato(
+    client,
+    "lead_checkpoints",
+    input.organizationId,
+    input.contactId,
+  );
+  if (!checkpoints.ok) return falha(counts, "dependencies_read", checkpoints.details);
+
+  const notas = await selecionarIdsPorContato(
+    client,
+    "lead_notes",
+    input.organizationId,
+    input.contactId,
+  );
+  if (!notas.ok) return falha(counts, "dependencies_read", notas.details);
+
+  const estado = await selecionarIdsPorContato(
+    client,
+    "lead_state",
+    input.organizationId,
+    input.contactId,
+  );
+  if (!estado.ok) return falha(counts, "dependencies_read", estado.details);
+
+  const transicoes = await selecionarIdsPorContato(
+    client,
+    "lead_state_transitions",
+    input.organizationId,
+    input.contactId,
+  );
+  if (!transicoes.ok) return falha(counts, "dependencies_read", transicoes.details);
+
   for (const compromisso of compromissos.rows) {
     const resultado = await apagarEventoGoogle(client, input.organizationId, compromisso);
     if (resultado === "deleted") soma(counts, "google_calendar_events_deleted", 1);
@@ -442,6 +482,42 @@ export async function resetarContatoDeTeste(
       apagarPorContato(
         client,
         counts,
+        "lead_checkpoints",
+        "lead_checkpoints",
+        input.organizationId,
+        input.contactId,
+      ),
+    () =>
+      apagarPorContato(
+        client,
+        counts,
+        "lead_notes",
+        "lead_notes",
+        input.organizationId,
+        input.contactId,
+      ),
+    () =>
+      apagarPorContato(
+        client,
+        counts,
+        "lead_state_transitions",
+        "lead_state_transitions",
+        input.organizationId,
+        input.contactId,
+      ),
+    () =>
+      apagarPorContato(
+        client,
+        counts,
+        "lead_state",
+        "lead_state",
+        input.organizationId,
+        input.contactId,
+      ),
+    () =>
+      apagarPorContato(
+        client,
+        counts,
         "before_send_traces",
         "before_send_traces",
         input.organizationId,
@@ -492,6 +568,10 @@ export async function resetarContatoDeTeste(
         ...mensagens.ids,
         ...leads.ids,
         ...zapsignDocumentos.ids,
+        ...checkpoints.ids,
+        ...notas.ids,
+        ...estado.ids,
+        ...transicoes.ids,
         ...compromissos.rows.map((row) => row.id),
       ]),
     () =>

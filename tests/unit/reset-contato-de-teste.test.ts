@@ -12,6 +12,10 @@ const LEAD = "66666666-6666-4666-8666-666666666666";
 const JOB = "77777777-7777-4777-8777-777777777777";
 const COMPROMISSO = "88888888-8888-4888-8888-888888888888";
 const DOCUMENTO_ZAPSIGN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CHECKPOINT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const NOTA = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const ESTADO = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const TRANSICAO = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 type Linha = Record<string, unknown>;
 
@@ -126,11 +130,16 @@ beforeEach(() => {
     ai_invocations: [
       { id: "inv-1", organization_id: ORG, conversation_id: CONVERSA, message_id: MENSAGEM },
     ],
+    lead_checkpoints: [{ id: CHECKPOINT, organization_id: ORG, contact_id: CONTATO }],
+    lead_notes: [{ id: NOTA, organization_id: ORG, contact_id: CONTATO }],
+    lead_state: [{ id: ESTADO, organization_id: ORG, contact_id: CONTATO }],
+    lead_state_transitions: [{ id: TRANSICAO, organization_id: ORG, contact_id: CONTATO }],
     before_send_traces: [{ id: "trace-1", organization_id: ORG, contact_id: CONTATO, job_id: JOB }],
     send_ledger: [{ id: "ledger-1", organization_id: ORG, contact_id: CONTATO, job_id: JOB }],
     event_log: [
       { id: "event-1", organization_id: ORG, entity_id: CONVERSA },
       { id: "event-2", organization_id: ORG, entity_id: DOCUMENTO_ZAPSIGN },
+      { id: "event-3", organization_id: ORG, entity_id: NOTA },
     ],
     orders: [{ id: "order-1", organization_id: ORG, contact_id: CONTATO }],
   };
@@ -150,8 +159,20 @@ describe("resetarContatoDeTeste", () => {
       { id: "99999999-9999-4999-8999-999999999999", organization_id: OUTRA_ORG },
     ]);
     expect(tabelas.event_log).toEqual([]);
+    expect(tabelas.lead_checkpoints).toEqual([]);
+    expect(tabelas.lead_notes).toEqual([]);
+    expect(tabelas.lead_state).toEqual([]);
+    expect(tabelas.lead_state_transitions).toEqual([]);
 
     const apagadas = new Set(delecoes.map((d) => d.tabela));
+    expect([...apagadas]).toEqual(
+      expect.arrayContaining([
+        "lead_checkpoints",
+        "lead_notes",
+        "lead_state",
+        "lead_state_transitions",
+      ]),
+    );
     for (const preservada of [
       "organizations",
       "crm_pipelines",
