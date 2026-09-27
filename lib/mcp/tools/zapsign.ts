@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import {
   criarDocumentoZapsign,
+  listarModelosDocumentoZapsign,
   listarDocumentosZapsign,
   obterDocumentoZapsign,
 } from "@/lib/zapsign/service";
@@ -103,7 +104,11 @@ function mensagemDeRecusa(motivo: string): string {
     case "zapsign_nao_configurado":
       return "a ZapSign ainda não está conectada para esta empresa.";
     case "template_id_required":
-      return "para criar por modelo, informe o modelo que a ZapSign deve usar.";
+      return "para criar por modelo, informe a chave do modelo configurado ou o modelo que a ZapSign deve usar.";
+    case "template_not_found":
+      return "não encontrei esse modelo ZapSign configurado para esta empresa.";
+    case "template_lookup_failed":
+      return "não consegui consultar os modelos ZapSign configurados agora.";
     case "document_source_required":
       return "para criar por arquivo, informe exatamente um arquivo: link PDF, link DOCX ou PDF em base64.";
     case "lead_not_found":
@@ -120,12 +125,49 @@ function mensagemDeRecusa(motivo: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// crm_list_zapsign_templates
+// ---------------------------------------------------------------------------
+
+const listarModelosInputShape = {
+  somente_ativos: z.boolean().optional().default(true),
+};
+
+export const crmListZapsignTemplates: McpToolDefinition<typeof listarModelosInputShape> = {
+  name: "crm_list_zapsign_templates",
+  description:
+    "Lista os modelos ZapSign configurados para esta empresa. Use antes de gerar contrato quando " +
+    "precisar escolher entre áreas como previdenciário, criminal ou trabalhista. A resposta traz " +
+    "`template_key`, nome, descrição e campos esperados; use `template_key` em " +
+    "`crm_create_zapsign_document` e não invente campos que não foram coletados.",
+  inputSchema: listarModelosInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    const { modelos } = await listarModelosDocumentoZapsign(ctx.supabase, ctx.organizationId);
+    return {
+      modelos: modelos
+        .filter((modelo) => !input.somente_ativos || modelo.is_active)
+        .map((modelo) => ({
+          template_key: modelo.template_key,
+          nome: modelo.name,
+          descricao: modelo.description,
+          campos_obrigatorios: modelo.required_fields,
+          agente_padrao: modelo.default_for_agent,
+          padrao_da_empresa: modelo.is_default,
+        })),
+    };
+  },
+};
+
+// ---------------------------------------------------------------------------
 // crm_create_zapsign_document
 // ---------------------------------------------------------------------------
 
 const criarInputShape = {
   modo: z.enum(["arquivo", "modelo"]).optional().default("modelo"),
   nome: z.string().trim().min(1).max(255).optional(),
+  template_key: z.string().trim().min(1).max(80).optional(),
   template_id: z.string().trim().min(1).max(255).optional(),
   template_data: z.record(z.string(), z.string()).optional(),
   url_pdf: z.string().trim().url().optional(),
@@ -154,8 +196,10 @@ export const crmCreateZapsignDocument: McpToolDefinition<typeof criarInputShape>
     "só chame com `confirmou_envio_externo: true` depois de confirmar que a criação pode disparar " +
     "convite fora do CRM. Quando a pessoa autorizar envio por e-mail, inclua no primeiro item de " +
     "`signers` os campos `name`, `email` e `send_automatic_email: true`, além de " +
-    "`confirmou_envio_externo: true`. Para modelo, informe `template_id`; para arquivo, informe " +
-    "exatamente um entre `url_pdf`, `url_docx` e `base64_pdf`. Não invente dados de signatário. " +
+    "`confirmou_envio_externo: true`. Para modelo, informe `template_key` ou `template_id`; para arquivo, informe " +
+    "exatamente um entre `url_pdf`, `url_docx` e `base64_pdf`. Quando houver modelos cadastrados, " +
+    "prefira `template_key` (ex.: previdenciario, criminal); se ela faltar, o sistema tenta o " +
+    "modelo padrão deste agente e depois o padrão da empresa. Não invente dados de signatário. " +
     "Se `criado: true`, responda no chat com o link de `documento.links_assinatura[0].url`; " +
     "não diga apenas que enviou por e-mail. " +
     "Se a resposta vier com `criado: false`, não diga que enviou nem que vai confirmar: explique " +
@@ -185,6 +229,8 @@ export const crmCreateZapsignDocument: McpToolDefinition<typeof criarInputShape>
       modo: input.modo,
       nome: input.nome,
       templateId: input.template_id,
+      templateKey: input.template_key,
+      templateAgentId: ctx.actor.type === "ai_agent" ? (ctx.actor.agent_id ?? null) : null,
       templateData: input.template_data,
       urlPdf: input.url_pdf,
       urlDocx: input.url_docx,

@@ -17,21 +17,11 @@ import {
   crmGetConversation,
   crmGetConversationHistory,
 } from "./conversations";
-import {
-  crmListLeads,
-  crmGetLead,
-  crmCreateLead,
-  crmUpdateLead,
-  crmMoveLeadStage,
-} from "./leads";
+import { crmListLeads, crmGetLead, crmCreateLead, crmUpdateLead, crmMoveLeadStage } from "./leads";
 import { crmListPipelines } from "./pipelines";
 import { crmSendWhatsappMessage } from "./messages";
 import { crmStartConversationAndSend } from "./start-conversation";
-import {
-  crmAssignConversation,
-  crmManageTags,
-  crmGetQueueStatus,
-} from "./governance";
+import { crmAssignConversation, crmManageTags, crmGetQueueStatus } from "./governance";
 import {
   crmListAvailableAttendants,
   crmListHumanCases,
@@ -92,6 +82,7 @@ import {
   crmCreateZapsignDocument,
   crmGetZapsignDocument,
   crmListZapsignDocuments,
+  crmListZapsignTemplates,
 } from "./zapsign";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
@@ -124,6 +115,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmDescribeExternalData,
   crmQueryExternalData,
   crmListPrivacyRequests,
+  crmListZapsignTemplates,
   crmListZapsignDocuments,
   crmGetZapsignDocument,
   // read — organizar a operação (W4)

@@ -17,9 +17,13 @@ export const dynamic = "force-dynamic";
 
 const entradaSchema = z
   .object({
+    modo: z.enum(["arquivo", "modelo"]).default("arquivo"),
     nome: z.string().trim().min(1).max(255).optional(),
     tipo_arquivo: z.enum(["pdf", "docx"]).default("pdf"),
-    url_documento: z.string().trim().url().max(2048),
+    url_documento: z.string().trim().url().max(2048).optional(),
+    template_key: z.string().trim().min(1).max(80).optional(),
+    template_id: z.string().trim().min(1).max(255).optional(),
+    template_data: z.record(z.string(), z.string()).optional(),
     signatario_nome: z.string().trim().min(1).max(160),
     signatario_email: z.string().trim().email().max(255),
     enviar_email: z.boolean().default(true),
@@ -32,7 +36,23 @@ const entradaSchema = z
     lead_id: z.string().uuid().optional(),
     contact_id: z.string().uuid().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.modo === "arquivo" && !input.url_documento) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["url_documento"],
+        message: "Informe a URL do documento.",
+      });
+    }
+    if (input.modo === "modelo" && !input.template_key && !input.template_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["template_key"],
+        message: "Escolha um modelo ZapSign.",
+      });
+    }
+  });
 
 const filtroSchema = z
   .object({
@@ -54,6 +74,12 @@ function mensagemDeRecusa(motivo: string): string {
       return "A ZapSign ainda não está conectada para esta empresa.";
     case "document_source_required":
       return "Informe uma URL de PDF ou DOCX para criar o documento.";
+    case "template_id_required":
+      return "Escolha um modelo ZapSign para criar o documento.";
+    case "template_not_found":
+      return "Não encontrei esse modelo ZapSign nesta empresa.";
+    case "template_lookup_failed":
+      return "Não foi possível consultar os modelos ZapSign agora.";
     case "lead_not_found":
       return "Não encontrei esse lead nesta empresa.";
     case "contact_not_found":
@@ -117,9 +143,14 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const limite = await checkRateLimit(`zapsign:create:${authz.org.orgId}`, 20, 60);
   if (!limite.allowed) {
-    return fail("rate_limited", t("Muitas alterações em pouco tempo. Tente de novo em instantes."), 429, {
-      requestId,
-    });
+    return fail(
+      "rate_limited",
+      t("Muitas alterações em pouco tempo. Tente de novo em instantes."),
+      429,
+      {
+        requestId,
+      },
+    );
   }
 
   let raw: unknown;
@@ -143,10 +174,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     actorKind: "user",
     actorRef: authz.user.id,
     source: "api",
-    modo: "arquivo",
+    modo: input.modo,
     nome: input.nome,
-    urlPdf: input.tipo_arquivo === "pdf" ? input.url_documento : undefined,
-    urlDocx: input.tipo_arquivo === "docx" ? input.url_documento : undefined,
+    templateId: input.template_id,
+    templateKey: input.template_key,
+    templateData: input.template_data,
+    urlPdf:
+      input.modo === "arquivo" && input.tipo_arquivo === "pdf" ? input.url_documento : undefined,
+    urlDocx:
+      input.modo === "arquivo" && input.tipo_arquivo === "docx" ? input.url_documento : undefined,
     externalId: input.external_id ?? null,
     dateLimitToSign: input.date_limit_to_sign ?? null,
     signers: [
@@ -169,7 +205,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       requestId,
       metadata: {
         reason: resultado.erro,
+        modo: input.modo,
         tipo_arquivo: input.tipo_arquivo,
+        template_key: input.template_key ?? null,
         enviar_email: input.enviar_email,
         linked: {
           lead: Boolean(input.lead_id),
@@ -191,7 +229,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     requestId,
     metadata: {
       source: "api",
+      modo: input.modo,
       tipo_arquivo: input.tipo_arquivo,
+      template_key: input.template_key ?? null,
       enviar_email: input.enviar_email,
       linked: {
         lead: Boolean(input.lead_id),
@@ -201,7 +241,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   });
 
   return ok(
-    { documento: resumoPublicoDocumentoZapsign(resultado.data.documento as Record<string, unknown>) },
+    {
+      documento: resumoPublicoDocumentoZapsign(resultado.data.documento as Record<string, unknown>),
+    },
     { status: 201, requestId },
   );
 }

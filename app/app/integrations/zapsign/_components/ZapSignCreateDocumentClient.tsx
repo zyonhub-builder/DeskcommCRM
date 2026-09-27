@@ -11,28 +11,44 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import type { ApiSuccess } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { CircleNotch } from "@/lib/ui/icons";
 
+type ModeloDocumentoZapSign = {
+  id: string;
+  template_key: string;
+  name: string;
+  required_fields: string[];
+  is_active: boolean;
+};
+
 interface Props {
   connected: boolean;
+  modelos: ModeloDocumentoZapSign[];
 }
 
 type TipoArquivo = "pdf" | "docx";
+type ModoCriacao = "arquivo" | "modelo";
 
-export function ZapSignCreateDocumentClient({ connected }: Props) {
+export function ZapSignCreateDocumentClient({ connected, modelos }: Props) {
   const t = useT();
   const router = useRouter();
   const [criando, setCriando] = useState(false);
+  const [modo, setModo] = useState<ModoCriacao>("arquivo");
   const [nome, setNome] = useState("");
   const [tipoArquivo, setTipoArquivo] = useState<TipoArquivo>("pdf");
   const [urlDocumento, setUrlDocumento] = useState("");
+  const [templateKey, setTemplateKey] = useState("");
+  const [templateDataJson, setTemplateDataJson] = useState("");
   const [signatarioNome, setSignatarioNome] = useState("");
   const [signatarioEmail, setSignatarioEmail] = useState("");
   const [enviarEmail, setEnviarEmail] = useState(true);
   const [limite, setLimite] = useState("");
+  const modelosAtivos = modelos.filter((modelo) => modelo.is_active);
+  const modeloSelecionado = modelosAtivos.find((modelo) => modelo.template_key === templateKey);
 
   async function criar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,15 +56,41 @@ export function ZapSignCreateDocumentClient({ connected }: Props) {
       toast.error(t("A ZapSign precisa estar conectada antes de criar documentos."));
       return;
     }
+    if (modo === "modelo" && !templateKey) {
+      toast.error(t("Escolha um modelo ZapSign para criar o documento."));
+      return;
+    }
+
+    let templateData: Record<string, string> | undefined;
+    if (modo === "modelo" && templateDataJson.trim()) {
+      try {
+        const parsed = JSON.parse(templateDataJson) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          toast.error(t("Os dados do modelo precisam ser um objeto JSON."));
+          return;
+        }
+        templateData = Object.fromEntries(
+          Object.entries(parsed as Record<string, unknown>).flatMap(([key, value]) =>
+            typeof value === "string" ? [[key, value]] : [],
+          ),
+        );
+      } catch {
+        toast.error(t("JSON dos dados do modelo inválido."));
+        return;
+      }
+    }
 
     setCriando(true);
     try {
       await apiClient.post<ApiSuccess<{ documento: unknown }>>(
         "/api/v1/integrations/zapsign/documents",
         {
+          modo,
           nome: nome.trim() || undefined,
           tipo_arquivo: tipoArquivo,
-          url_documento: urlDocumento.trim(),
+          url_documento: modo === "arquivo" ? urlDocumento.trim() : undefined,
+          template_key: modo === "modelo" ? templateKey : undefined,
+          template_data: templateData,
           signatario_nome: signatarioNome.trim(),
           signatario_email: signatarioEmail.trim(),
           enviar_email: enviarEmail,
@@ -57,6 +99,7 @@ export function ZapSignCreateDocumentClient({ connected }: Props) {
       );
       setNome("");
       setUrlDocumento("");
+      setTemplateDataJson("");
       setSignatarioNome("");
       setSignatarioEmail("");
       setLimite("");
@@ -74,7 +117,7 @@ export function ZapSignCreateDocumentClient({ connected }: Props) {
       <CardHeader>
         <CardTitle>{t("Criar documento de teste")}</CardTitle>
         <CardDescription>
-          {t("Envie um PDF ou DOCX por URL para validar a conexão sem esperar a IA.")}
+          {t("Valide a conexão criando por URL de arquivo ou por um modelo cadastrado.")}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -95,32 +138,89 @@ export function ZapSignCreateDocumentClient({ connected }: Props) {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
-            <div className="space-y-2">
-              <Label htmlFor="zapsign-doc-tipo">{t("Tipo de arquivo")}</Label>
-              <select
-                id="zapsign-doc-tipo"
-                className="flex h-10 w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text"
-                value={tipoArquivo}
-                onChange={(event) => setTipoArquivo(event.target.value as TipoArquivo)}
-              >
-                <option value="pdf">PDF</option>
-                <option value="docx">DOCX</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="zapsign-doc-url">{t("URL do arquivo")}</Label>
-              <Input
-                id="zapsign-doc-url"
-                type="url"
-                required
-                value={urlDocumento}
-                placeholder="https://..."
-                onChange={(event) => setUrlDocumento(event.target.value)}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="zapsign-doc-modo">{t("Origem do documento")}</Label>
+            <select
+              id="zapsign-doc-modo"
+              className="flex h-10 w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text"
+              value={modo}
+              onChange={(event) => setModo(event.target.value as ModoCriacao)}
+            >
+              <option value="arquivo">{t("Arquivo por URL")}</option>
+              <option value="modelo">{t("Modelo cadastrado")}</option>
+            </select>
           </div>
+
+          {modo === "arquivo" ? (
+            <div className="grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
+              <div className="space-y-2">
+                <Label htmlFor="zapsign-doc-tipo">{t("Tipo de arquivo")}</Label>
+                <select
+                  id="zapsign-doc-tipo"
+                  className="flex h-10 w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text"
+                  value={tipoArquivo}
+                  onChange={(event) => setTipoArquivo(event.target.value as TipoArquivo)}
+                >
+                  <option value="pdf">PDF</option>
+                  <option value="docx">DOCX</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="zapsign-doc-url">{t("URL do arquivo")}</Label>
+                <Input
+                  id="zapsign-doc-url"
+                  type="url"
+                  required
+                  value={urlDocumento}
+                  placeholder="https://..."
+                  onChange={(event) => setUrlDocumento(event.target.value)}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="zapsign-doc-modelo">{t("Modelo ZapSign")}</Label>
+                <select
+                  id="zapsign-doc-modelo"
+                  className="flex h-10 w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text"
+                  value={templateKey}
+                  onChange={(event) => setTemplateKey(event.target.value)}
+                >
+                  <option value="">{t("Selecione um modelo")}</option>
+                  {modelosAtivos.map((modelo) => (
+                    <option key={modelo.id} value={modelo.template_key}>
+                      {modelo.name} ({modelo.template_key})
+                    </option>
+                  ))}
+                </select>
+                {modelosAtivos.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("Cadastre um modelo abaixo antes de testar por modelo.")}
+                  </p>
+                ) : null}
+              </div>
+
+              {modeloSelecionado?.required_fields.length ? (
+                <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                  {t("Campos esperados")}: {modeloSelecionado.required_fields.join(", ")}
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <Label htmlFor="zapsign-template-data">{t("Dados do modelo em JSON")}</Label>
+                <Textarea
+                  id="zapsign-template-data"
+                  rows={5}
+                  value={templateDataJson}
+                  placeholder={'{"{{Nome}}":"Maria Cliente"}'}
+                  onChange={(event) => setTemplateDataJson(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">{t("Opcional")}</p>
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { ZapSignCreateDocumentClient } from "./_components/ZapSignCreateDocumentClient";
 import { ZapSignConfigClient } from "./_components/ZapSignConfigClient";
+import { ZapSignTemplatesClient } from "./_components/ZapSignTemplatesClient";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,6 +23,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { FileText } from "@/lib/ui/icons";
 import {
   buscarIntegracaoZapsign,
+  listarModelosDocumentoZapsign,
   listarDocumentosZapsign,
   visaoPublicaDaIntegracao,
 } from "@/lib/zapsign/service";
@@ -58,6 +60,18 @@ export default async function ZapSignPage() {
   const admin = createAdminClient();
   const row = await buscarIntegracaoZapsign(admin, activeOrg.orgId);
   const integracao = visaoPublicaDaIntegracao(row);
+  const modelos = await listarModelosDocumentoZapsign(admin, activeOrg.orgId);
+  const { data: agentesRaw } = await admin
+    .from("ai_agents")
+    .select("id, name")
+    .eq("organization_id", activeOrg.orgId)
+    .is("archived_at", null)
+    .order("name", { ascending: true });
+  const agentes = (agentesRaw ?? []).flatMap((agente) =>
+    typeof agente.id === "string" && typeof agente.name === "string"
+      ? [{ id: agente.id, name: agente.name }]
+      : [],
+  );
   const documentos = await listarDocumentosZapsign(admin, {
     organizationId: activeOrg.orgId,
     limite: 20,
@@ -92,7 +106,8 @@ export default async function ZapSignPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
           <ZapSignConfigClient initial={initial} />
-          <ZapSignCreateDocumentClient connected={integracao.connected} />
+          <ZapSignTemplatesClient modelos={modelos.modelos} agentes={agentes} />
+          <ZapSignCreateDocumentClient connected={integracao.connected} modelos={modelos.modelos} />
         </div>
 
         <Card>
@@ -146,12 +161,18 @@ export default async function ZapSignPage() {
                     <TableCell>
                       <div className="flex flex-col gap-1 text-sm">
                         {typeof doc.lead_id === "string" && doc.lead_id ? (
-                          <Link className="text-accent hover:underline" href={`/app/kanban?lead=${doc.lead_id}`}>
+                          <Link
+                            className="text-accent hover:underline"
+                            href={`/app/kanban?lead=${doc.lead_id}`}
+                          >
                             {t("Lead vinculado")}
                           </Link>
                         ) : null}
                         {typeof doc.contact_id === "string" && doc.contact_id ? (
-                          <Link className="text-accent hover:underline" href={`/app/contacts/${doc.contact_id}`}>
+                          <Link
+                            className="text-accent hover:underline"
+                            href={`/app/contacts/${doc.contact_id}`}
+                          >
                             {t("Contato vinculado")}
                           </Link>
                         ) : null}

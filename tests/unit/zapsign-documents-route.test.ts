@@ -123,6 +123,30 @@ describe("POST /api/v1/integrations/zapsign/documents", () => {
     expect(auditSerializado).not.toContain("arquivos.exemplo");
   });
 
+  it("cria documento por modelo cadastrado sem exigir URL de arquivo", async () => {
+    const res = await POST(
+      req(
+        corpoValido({
+          modo: "modelo",
+          template_key: "previdenciario",
+          url_documento: undefined,
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(201);
+    expect(criarDocumentoZapsign).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG,
+        modo: "modelo",
+        templateKey: "previdenciario",
+        urlPdf: undefined,
+        urlDocx: undefined,
+      }),
+    );
+  });
+
   it("lista documentos sem expor signatários nem payload do provedor", async () => {
     const res = await GET(
       new NextRequest(

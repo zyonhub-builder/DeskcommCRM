@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { ALVO_DE_FUNIL } from "@/lib/leads/escopo-de-funil";
 import type { McpContext } from "@/lib/mcp/types";
@@ -8,17 +9,19 @@ import {
   crmCreateZapsignDocument,
   crmGetZapsignDocument,
   crmListZapsignDocuments,
+  crmListZapsignTemplates,
   redigirCriacaoZapsignParaAuditoria,
 } from "@/lib/mcp/tools/zapsign";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 
 describe("tools ZapSign", () => {
-  it("declara as três capacidades no runtime e no catálogo", () => {
+  it("declara as capacidades no runtime e no catálogo", () => {
     const nomesRuntime = new Set(allTools.map((t) => t.name));
     const catalogo = new Map(TOOL_CATALOG.map((t) => [t.name, t]));
 
     for (const name of [
+      "crm_list_zapsign_templates",
       "crm_create_zapsign_document",
       "crm_get_zapsign_document",
       "crm_list_zapsign_documents",
@@ -41,10 +44,26 @@ describe("tools ZapSign", () => {
   });
 
   it("mantém consultas como leitura", () => {
+    expect(crmListZapsignTemplates.category).toBe("read");
+    expect(crmListZapsignTemplates.requiresScope).toBe("mcp:read");
     expect(crmGetZapsignDocument.category).toBe("read");
     expect(crmGetZapsignDocument.requiresScope).toBe("mcp:read");
     expect(crmListZapsignDocuments.category).toBe("read");
     expect(crmListZapsignDocuments.requiresScope).toBe("mcp:read");
+  });
+
+  it("aceita template_key para resolver modelo configurado antes do envio", () => {
+    const schema = z.object(crmCreateZapsignDocument.inputSchema);
+
+    expect(
+      schema.parse({
+        modo: "modelo",
+        template_key: "previdenciario",
+      }),
+    ).toMatchObject({
+      modo: "modelo",
+      template_key: "previdenciario",
+    });
   });
 
   it("redige arquivo, signatários e dados de modelo antes do audit", () => {
@@ -100,7 +119,8 @@ describe("tools ZapSign", () => {
     expect(resultado).toEqual({
       criado: false,
       motivo: "confirmacao_necessaria",
-      mensagem: "o pedido pode disparar convite fora do sistema. Confirme explicitamente antes de criar.",
+      mensagem:
+        "o pedido pode disparar convite fora do sistema. Confirme explicitamente antes de criar.",
     });
   });
 });

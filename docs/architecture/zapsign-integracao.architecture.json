@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Integração ZapSign",
-    "subtitle": "módulo opcional: credencial por organização, criação de documento pela IA e fechamento pelo evento recebido",
+    "subtitle": "módulo opcional: credencial por organização, modelos por área/agente, criação de documento pela IA e fechamento pelo evento recebido",
     "output": "zapsign-integracao.html",
     "quality_profile": "standard"
   },
@@ -14,7 +14,17 @@
     { "id": "provedor", "label": "ZapSign" },
     { "id": "retorno", "label": "Retorno e visibilidade" }
   ],
-  "mainPath": ["modulo", "telaTenant", "config", "toolCreate", "apiZap", "webhook", "documentos", "visibilidadeAtendimento"],
+  "mainPath": [
+    "modulo",
+    "telaTenant",
+    "modelosApi",
+    "modelosTabela",
+    "toolCreate",
+    "apiZap",
+    "webhook",
+    "documentos",
+    "visibilidadeAtendimento"
+  ],
   "nodes": [
     {
       "id": "modulo",
@@ -38,7 +48,15 @@
       "col": 2,
       "type": "ui",
       "label": "/app/integrations/zapsign",
-      "sublabel": "admin da organização · configura token/webhook, cria documento de teste e lista o espelho local"
+      "sublabel": "admin da organização · configura token/webhook, cadastra modelos, cria documento de teste e lista o espelho local"
+    },
+    {
+      "id": "modelosApi",
+      "lane": "tenant",
+      "col": 3,
+      "type": "route",
+      "label": "GET/POST /api/v1/integrations/zapsign/templates",
+      "sublabel": "admin · salva chave da área, template_id, campos obrigatórios e padrão por agente"
     },
     {
       "id": "apiManual",
@@ -46,7 +64,7 @@
       "col": 3,
       "type": "route",
       "label": "POST /api/v1/integrations/zapsign/documents",
-      "sublabel": "criação manual por URL PDF/DOCX · audit redigido · resposta sem signatários"
+      "sublabel": "criação manual por URL PDF/DOCX ou modelo cadastrado · audit redigido · resposta sem signatários"
     },
     {
       "id": "tenantIntegrations",
@@ -57,12 +75,20 @@
       "sublabel": "provider zapsign · token e segredo do retorno cifrados por organização"
     },
     {
+      "id": "modelosTabela",
+      "lane": "tenant",
+      "col": 4,
+      "type": "table",
+      "label": "zapsign_document_templates",
+      "sublabel": "tenant-aware · template_key, template_id da ZapSign, campos e padrão por agente"
+    },
+    {
       "id": "catalogo",
       "lane": "agente",
       "col": 2,
       "type": "config",
       "label": "catalogo/zapsign.ts",
-      "sublabel": "três capacidades · criação crítica exige marcação explícita"
+      "sublabel": "capacidades de modelos, documentos e criação crítica"
     },
     {
       "id": "toolCreate",
@@ -70,7 +96,7 @@
       "col": 3,
       "type": "tool",
       "label": "crm_create_zapsign_document",
-      "sublabel": "ai_operator · redige arquivo e signatários no audit · source=mcp"
+      "sublabel": "ai_operator · resolve template_key/default do agente · redige arquivo e signatários no audit"
     },
     {
       "id": "toolRead",
@@ -132,12 +158,41 @@
   "edges": [
     { "id": "e1", "from": "modulo", "to": "telaTenant", "label": "abre a porta no CRM" },
     { "id": "e1b", "from": "telaTenant", "to": "config", "label": "salva e testa" },
-    { "id": "e2", "from": "config", "to": "tenantIntegrations", "label": "salva credencial cifrada" },
+    { "id": "e1c", "from": "telaTenant", "to": "modelosApi", "label": "lista e salva modelos" },
+    {
+      "id": "e1d",
+      "from": "modelosApi",
+      "to": "modelosTabela",
+      "label": "configuração por área/agente"
+    },
+    {
+      "id": "e2",
+      "from": "config",
+      "to": "tenantIntegrations",
+      "label": "salva credencial cifrada"
+    },
     { "id": "e3", "from": "modulo", "to": "catalogo", "label": "oferece capacidades" },
     { "id": "e4", "from": "catalogo", "to": "toolCreate", "label": "capacidade crítica" },
-    { "id": "e5", "from": "toolCreate", "to": "tenantIntegrations", "label": "decifra token da org" },
+    {
+      "id": "e5",
+      "from": "toolCreate",
+      "to": "tenantIntegrations",
+      "label": "decifra token da org"
+    },
+    {
+      "id": "e5b",
+      "from": "toolCreate",
+      "to": "modelosTabela",
+      "label": "resolve chave ou padrão"
+    },
     { "id": "e6", "from": "toolCreate", "to": "apiZap", "label": "cria documento" },
     { "id": "e6b", "from": "telaTenant", "to": "apiManual", "label": "teste manual" },
+    {
+      "id": "e6bb",
+      "from": "apiManual",
+      "to": "modelosTabela",
+      "label": "resolve modelo de teste"
+    },
     { "id": "e6c", "from": "apiManual", "to": "apiZap", "label": "cria documento" },
     { "id": "e6d", "from": "apiManual", "to": "documentos", "label": "espelha criação" },
     { "id": "e7", "from": "apiZap", "to": "webhook", "label": "notifica status" },
@@ -145,8 +200,14 @@
     { "id": "e9", "from": "webhook", "to": "documentos", "label": "atualiza status" },
     { "id": "e10", "from": "toolCreate", "to": "documentos", "label": "espelha criação" },
     { "id": "e11", "from": "documentos", "to": "toolRead", "label": "consulta do agente" },
-    { "id": "e11b", "from": "documentos", "to": "visibilidadeAtendimento", "label": "mostra status sem PII" },
+    {
+      "id": "e11b",
+      "from": "documentos",
+      "to": "visibilidadeAtendimento",
+      "label": "mostra status sem PII"
+    },
     { "id": "e12", "from": "config", "to": "audit", "label": "audita configuração" },
+    { "id": "e12b", "from": "modelosApi", "to": "audit", "label": "audita cadastro de modelo" },
     { "id": "e13", "from": "webhook", "to": "audit", "label": "audita retorno" },
     { "id": "e14", "from": "apiManual", "to": "audit", "label": "audita criação manual" }
   ]

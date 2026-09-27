@@ -9,6 +9,17 @@ import { declararTools } from "./tipos";
 
 export const TOOLS_ZAPSIGN = declararTools([
   {
+    name: "crm_list_zapsign_templates",
+    category: "read",
+    rotulo: "Ver modelos de contrato",
+    explicacao:
+      "Mostra quais modelos de contrato estão configurados para cada área ou agente, com os campos que precisam ser coletados antes de enviar.",
+    oQueToca: "Assinaturas eletrônicas",
+    risco: "seguro",
+    pacotes: ["vender", "atender"],
+    modulo: "zapsign",
+  },
+  {
     name: "crm_list_zapsign_documents",
     category: "read",
     rotulo: "Ver documentos para assinatura",

@@ -63,6 +63,22 @@ export type ZapsignIntegrationPublica = {
   last_health_check_at: string | null;
 };
 
+export type ZapsignDocumentTemplatePublico = {
+  id: string;
+  template_key: string;
+  name: string;
+  description: string | null;
+  zapsign_template_id: string;
+  required_fields: string[];
+  template_data_defaults: Record<string, string>;
+  agent_id: string | null;
+  is_active: boolean;
+  is_default: boolean;
+  default_for_agent: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ConfigurarZapsignInput = {
   organizationId: string;
   apiToken: string;
@@ -82,6 +98,8 @@ export type CriarDocumentoZapsignInput = {
   modo: "arquivo" | "modelo";
   nome?: string;
   templateId?: string;
+  templateKey?: string | null;
+  templateAgentId?: string | null;
   templateData?: Record<string, string>;
   urlPdf?: string;
   urlDocx?: string;
@@ -94,6 +112,21 @@ export type CriarDocumentoZapsignInput = {
   leadId?: string | null;
   contactId?: string | null;
   rawOptions?: Record<string, unknown>;
+};
+
+export type SalvarModeloDocumentoZapsignInput = {
+  id?: string | null;
+  organizationId: string;
+  agentId?: string | null;
+  templateKey: string;
+  nome: string;
+  descricao?: string | null;
+  zapsignTemplateId: string;
+  requiredFields?: string[];
+  templateDataDefaults?: Record<string, string>;
+  isActive?: boolean;
+  isDefault?: boolean;
+  defaultForAgent?: boolean;
 };
 
 type CredencialZapsign = {
@@ -126,6 +159,17 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | null {
 
 function last4(token: string): string {
   return token.slice(-4);
+}
+
+export function normalizarChaveModeloZapsign(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 export function gerarWebhookSecret(): string {
@@ -332,6 +376,198 @@ export async function testarTokenZapsign(input: {
       return { ok: false, mensagem: error.message, status: error.status };
     }
     return { ok: false, mensagem: error instanceof Error ? error.message : "zapsign_test_failed" };
+  }
+}
+
+function stringArray(valor: unknown): string[] {
+  if (!Array.isArray(valor)) return [];
+  return valor
+    .flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim()] : []))
+    .slice(0, 80);
+}
+
+function stringRecord(valor: unknown): Record<string, string> {
+  const obj = objetoRecord(valor);
+  if (!obj) return {};
+  return Object.fromEntries(
+    Object.entries(obj).flatMap(([key, value]) =>
+      typeof value === "string" ? [[key, value]] : [],
+    ),
+  );
+}
+
+function modeloDocumentoLocal(row: Record<string, unknown>): ZapsignDocumentTemplatePublico {
+  return {
+    id: String(row.id),
+    template_key: String(row.template_key),
+    name: String(row.name),
+    description: typeof row.description === "string" ? row.description : null,
+    zapsign_template_id: String(row.zapsign_template_id),
+    required_fields: stringArray(row.required_fields),
+    template_data_defaults: stringRecord(row.template_data_defaults),
+    agent_id: typeof row.agent_id === "string" ? row.agent_id : null,
+    is_active: row.is_active !== false,
+    is_default: row.is_default === true,
+    default_for_agent: row.default_for_agent === true,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+export async function listarModelosDocumentoZapsign(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<{ modelos: ZapsignDocumentTemplatePublico[] }> {
+  const { data, error } = await db
+    .from("zapsign_document_templates")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .order("is_active", { ascending: false })
+    .order("is_default", { ascending: false })
+    .order("template_key", { ascending: true });
+  if (error) throw new Error(`zapsign_templates_list_failed: ${error.message}`);
+  return {
+    modelos: (data ?? []).map((row) => modeloDocumentoLocal(row as Record<string, unknown>)),
+  };
+}
+
+export async function salvarModeloDocumentoZapsign(
+  db: SupabaseClient,
+  input: SalvarModeloDocumentoZapsignInput,
+): Promise<Resultado<ZapsignDocumentTemplatePublico>> {
+  const templateKey = normalizarChaveModeloZapsign(input.templateKey);
+  if (!templateKey) return { ok: false, erro: "template_key_invalid", status: 422 };
+
+  if (input.agentId) {
+    const { data, error } = await db
+      .from("ai_agents")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("id", input.agentId)
+      .maybeSingle();
+    if (error) return { ok: false, erro: "agent_lookup_failed", status: 500 };
+    if (!data) return { ok: false, erro: "agent_not_found", status: 404 };
+  }
+
+  const patch = {
+    organization_id: input.organizationId,
+    agent_id: input.agentId ?? null,
+    template_key: templateKey,
+    name: input.nome.trim(),
+    description: input.descricao?.trim() || null,
+    zapsign_template_id: input.zapsignTemplateId.trim(),
+    required_fields: (input.requiredFields ?? []).map((campo) => campo.trim()).filter(Boolean),
+    template_data_defaults: input.templateDataDefaults ?? {},
+    is_active: input.isActive ?? true,
+    is_default: input.isDefault ?? false,
+    default_for_agent: input.defaultForAgent ?? false,
+  };
+
+  const query = input.id
+    ? db
+        .from("zapsign_document_templates")
+        .update(patch)
+        .eq("organization_id", input.organizationId)
+        .eq("id", input.id)
+    : db.from("zapsign_document_templates").insert(patch);
+
+  const { data, error } = await query.select("*").single();
+  if (error || !data) {
+    const duplicate =
+      error?.code === "23505"
+        ? error.message.includes("one_agent_default")
+          ? "agent_default_conflict"
+          : error.message.includes("one_default")
+            ? "default_conflict"
+            : "template_key_conflict"
+        : "template_save_failed";
+    return { ok: false, erro: duplicate, status: error?.code === "23505" ? 409 : 500 };
+  }
+  return { ok: true, data: modeloDocumentoLocal(data as Record<string, unknown>) };
+}
+
+async function buscarModeloPorFiltro(
+  db: SupabaseClient,
+  input: {
+    organizationId: string;
+    templateKey?: string | null;
+    agentId?: string | null;
+    defaultDaOrganizacao?: boolean;
+  },
+): Promise<ZapsignDocumentTemplatePublico | null> {
+  let query = db
+    .from("zapsign_document_templates")
+    .select("*")
+    .eq("organization_id", input.organizationId)
+    .eq("is_active", true);
+  if (input.templateKey)
+    query = query.eq("template_key", normalizarChaveModeloZapsign(input.templateKey));
+  if (input.agentId) query = query.eq("agent_id", input.agentId).eq("default_for_agent", true);
+  if (input.defaultDaOrganizacao) query = query.eq("is_default", true);
+
+  const { data, error } = await query
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`zapsign_template_lookup_failed: ${error.message}`);
+  return data ? modeloDocumentoLocal(data as Record<string, unknown>) : null;
+}
+
+async function resolverModeloDocumentoZapsign(
+  db: SupabaseClient,
+  input: {
+    organizationId: string;
+    templateId?: string;
+    templateKey?: string | null;
+    agentId?: string | null;
+    templateData?: Record<string, string>;
+  },
+): Promise<Resultado<{ templateId: string; templateData: Record<string, string> | undefined }>> {
+  if (input.templateId?.trim()) {
+    return {
+      ok: true,
+      data: { templateId: input.templateId.trim(), templateData: input.templateData },
+    };
+  }
+
+  try {
+    const modeloPorChave = input.templateKey
+      ? await buscarModeloPorFiltro(db, {
+          organizationId: input.organizationId,
+          templateKey: input.templateKey,
+        })
+      : null;
+    const modeloPorAgente =
+      !modeloPorChave && input.agentId
+        ? await buscarModeloPorFiltro(db, {
+            organizationId: input.organizationId,
+            agentId: input.agentId,
+          })
+        : null;
+    const modeloPadrao =
+      !modeloPorChave && !modeloPorAgente
+        ? await buscarModeloPorFiltro(db, {
+            organizationId: input.organizationId,
+            defaultDaOrganizacao: true,
+          })
+        : null;
+    const modelo = modeloPorChave ?? modeloPorAgente ?? modeloPadrao;
+    if (!modelo) {
+      return {
+        ok: false,
+        erro: input.templateKey ? "template_not_found" : "template_id_required",
+        status: input.templateKey ? 404 : 422,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        templateId: modelo.zapsign_template_id,
+        templateData: { ...modelo.template_data_defaults, ...(input.templateData ?? {}) },
+      },
+    };
+  } catch {
+    return { ok: false, erro: "template_lookup_failed", status: 500 };
   }
 }
 
@@ -546,7 +782,24 @@ export async function criarDocumentoZapsign(
   });
   if (!vinculos.ok) return vinculos;
 
-  const payload = montarPayloadCriacao(input);
+  const modelo =
+    input.modo === "modelo"
+      ? await resolverModeloDocumentoZapsign(db, {
+          organizationId: input.organizationId,
+          templateId: input.templateId,
+          templateKey: input.templateKey,
+          agentId: input.templateAgentId,
+          templateData: input.templateData,
+        })
+      : null;
+  if (modelo && !modelo.ok) return modelo;
+
+  const inputResolvido =
+    modelo && modelo.ok
+      ? { ...input, templateId: modelo.data.templateId, templateData: modelo.data.templateData }
+      : input;
+
+  const payload = montarPayloadCriacao(inputResolvido);
   if (!payload.ok) return payload;
 
   let resposta: ZapSignDocumentSummary;
@@ -557,7 +810,7 @@ export async function criarDocumentoZapsign(
       sandbox: cred.data.sandbox,
     });
     resposta =
-      input.modo === "modelo"
+      inputResolvido.modo === "modelo"
         ? await client.createDocumentFromTemplate(payload.data)
         : await client.createDocument(payload.data);
   } catch (error) {

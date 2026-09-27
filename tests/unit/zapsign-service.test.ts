@@ -37,6 +37,14 @@ class Query {
     return this;
   }
 
+  order(): this {
+    return this;
+  }
+
+  limit(): this {
+    return this;
+  }
+
   async maybeSingle(): Promise<{ data: Record<string, unknown> | null; error: null }> {
     if (this.table === "tenant_integrations") {
       return {
@@ -72,6 +80,33 @@ class Query {
         data:
           this.filters.organization_id === ORG && this.filters.id === CONTACT
             ? { id: CONTACT }
+            : null,
+        error: null,
+      };
+    }
+    if (this.table === "zapsign_document_templates") {
+      const base = {
+        id: "modelo-local",
+        organization_id: ORG,
+        template_key: this.filters.template_key ?? "previdenciario",
+        name: "Contrato Previdenciário",
+        description: null,
+        zapsign_template_id: "tpl-previdenciario",
+        required_fields: ["{{Nome}}", "{{CPF}}"],
+        template_data_defaults: { "{{Escritorio}}": "Talismã Advocacia" },
+        agent_id: null,
+        is_active: true,
+        is_default: this.filters.is_default === true,
+        default_for_agent: false,
+        created_at: "2026-09-27T09:00:00.000Z",
+        updated_at: "2026-09-27T09:00:00.000Z",
+      };
+      return {
+        data:
+          this.filters.organization_id === ORG &&
+          this.filters.is_active === true &&
+          (this.filters.template_key === "previdenciario" || this.filters.is_default === true)
+            ? base
             : null,
         error: null,
       };
@@ -201,5 +236,40 @@ describe("criarDocumentoZapsign", () => {
         nome: "Ana Cliente",
       },
     ]);
+  });
+
+  it("resolve template_key cadastrado antes de chamar a ZapSign", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      json({
+        token: "doc-token",
+        name: "Contrato Previdenciário",
+        status: "pending",
+        signers: [{ token: "signer-token" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchImpl);
+
+    const resultado = await criarDocumentoZapsign(new FakeDb() as never, {
+      organizationId: ORG,
+      actorKind: "ai",
+      actorRef: "run-1",
+      source: "mcp",
+      modo: "modelo",
+      templateKey: "Previdenciário",
+      templateData: { "{{Nome}}": "Ana Cliente" },
+      signers: [{ name: "Ana Cliente" }],
+      leadId: LEAD,
+      contactId: CONTACT,
+    });
+
+    expect(resultado.ok).toBe(true);
+    const payload = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(payload).toMatchObject({
+      template_id: "tpl-previdenciario",
+      data: [
+        { de: "{{Escritorio}}", para: "Talismã Advocacia" },
+        { de: "{{Nome}}", para: "Ana Cliente" },
+      ],
+    });
   });
 });
