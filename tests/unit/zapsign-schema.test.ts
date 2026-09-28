@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const MIGRATION = "supabase/migrations/20260925130000_0411_zapsign_integracao.sql";
 const ORIGIN_MIGRATION =
-  "supabase/migrations/20260926200000_0414_zapsign_assinatura_preserva_origem.sql";
-const TEMPLATES_MIGRATION = "supabase/migrations/20260927090000_0415_zapsign_modelos_documento.sql";
+  "supabase/migrations/20260926200000_0447_zapsign_assinatura_preserva_origem.sql";
+const TEMPLATES_MIGRATION = "supabase/migrations/20260927090000_0448_zapsign_modelos_documento.sql";
 
 describe("schema ZapSign", () => {
   it("migration e baseline carregam provider, tabela e FKs compostas por organização", () => {

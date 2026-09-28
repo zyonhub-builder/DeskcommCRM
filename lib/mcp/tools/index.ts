@@ -16,9 +16,17 @@ import {
   crmListConversations,
   crmGetConversation,
   crmGetConversationHistory,
+  crmCreateConversationDraft,
 } from "./conversations";
-import { crmListLeads, crmGetLead, crmCreateLead, crmUpdateLead, crmMoveLeadStage } from "./leads";
-import { crmListPipelines } from "./pipelines";
+import {
+  crmListLeads,
+  crmGetLead,
+  crmCreateLead,
+  crmUpdateLead,
+  crmMoveLeadStage,
+  crmRetomarLead,
+} from "./leads";
+import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
 import { crmSendWhatsappMessage } from "./messages";
 import { crmStartConversationAndSend } from "./start-conversation";
 import { crmAssignConversation, crmManageTags, crmGetQueueStatus } from "./governance";
@@ -105,6 +113,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListLeads,
   crmGetLead,
   crmListPipelines,
+  crmGetPipelineForecast,
   crmSearchKnowledge,
   crmListKnowledgeSources,
   crmListImprovementProposals,
@@ -145,8 +154,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCreateLead,
   crmUpdateLead,
   crmMoveLeadStage,
+  crmRetomarLead,
   crmSendWhatsappMessage,
   crmStartConversationAndSend,
+  crmCreateConversationDraft,
   crmAssignConversation,
   crmManageTags,
   // write — organizar a operação (W4)
