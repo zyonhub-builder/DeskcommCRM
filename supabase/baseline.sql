@@ -7995,7 +7995,7 @@ $seed$;
 -- de ai_budgets nunca dispara. Derivado de ai_models: idempotente e
 -- auto-curativo, cobre qualquer modelo futuro do catálogo.
 insert into public.ai_pricing (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
-select
+select distinct on (m.model_id)
   m.model_id,
   m.input_price_per_million_cents,
   m.output_price_per_million_cents,
@@ -8006,15 +8006,18 @@ where m.deprecated_at is null
   and m.output_price_per_million_cents is not null
   and not exists (
     select 1 from public.ai_pricing p
-    where p.model = m.model_id and p.superseded_at is null
-  );
+    where p.model = m.model_id
+  )
+order by
+  m.model_id,
+  case when m.provider in ('anthropic', 'openai', 'google') then 0 else 1 end;
 
 -- Embedding do RAG — não vive em ai_models.
 insert into public.ai_pricing (model, embedding_cents_per_million_tokens, notes)
 select 'openai/text-embedding-3-small', 20, 'backfill 0068 (seed original da 0010)'
 where not exists (
   select 1 from public.ai_pricing p
-  where p.model = 'openai/text-embedding-3-small' and p.superseded_at is null
+  where p.model = 'openai/text-embedding-3-small'
 );
 -- ---- crm_leads owner_kind/owner_agent_id (migration 0070) ----
 -- CRM Vivo · Wave 1 (CORE 1): a IA é dona do NEGÓCIO, não só da conversa.
@@ -14447,7 +14450,7 @@ alter table public.webhook_events_log
   drop constraint if exists webhook_events_log_provider_check;
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy'
+    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy', 'zapsign'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----

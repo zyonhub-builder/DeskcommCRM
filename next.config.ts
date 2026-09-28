@@ -72,6 +72,9 @@ const nextConfig: NextConfig = {
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
     ],
   },
+  typescript: {
+    ignoreBuildErrors: process.env.DESKCOMM_SKIP_NEXT_TYPECHECK === "1",
+  },
   reactStrictMode: true,
   poweredByHeader: false,
   // typedRoutes moved out of experimental in Next 15.5+
