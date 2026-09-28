@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Play, RefreshCw, Save, Square } from "lucide-react";
+import { Download, Play, RefreshCw, Save, Sparkles, Square } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,11 +25,16 @@ type PassoDaJornada = {
   note?: string | null;
 };
 
+type ModoExecucaoLaboratorio = "simulated" | "real_whatsapp";
+
 type CenarioDaJornada = {
   id: string;
   name: string;
   description: string | null;
   channel_session_id: string | null;
+  agent_id: string | null;
+  execution_mode: ModoExecucaoLaboratorio;
+  expected_events: EventosEsperadosLaboratorio;
   phone_number: string;
   contact_name: string | null;
   steps: PassoDaJornada[];
@@ -39,10 +44,38 @@ type CenarioDaJornada = {
   updated_at: string;
 };
 
+type EventosEsperadosLaboratorio = {
+  sign_contract: boolean;
+  create_calendar_event: boolean;
+  [key: string]: unknown;
+};
+
+type AnaliseIaDaRodada = {
+  generated_at: string;
+  model_id: string;
+  model_origin: string;
+  summary: string;
+  gaps: string[];
+  improvements: string[];
+  faqs: string[];
+  risks: string[];
+  next_tests: string[];
+};
+
+type RoteiroGeradoDaJornada = {
+  generated_at: string;
+  model_id: string;
+  model_origin: string;
+  steps: PassoDaJornada[];
+  notes: string[];
+};
+
 type RelatorioDaRodada = {
   generated_at: string;
   duration_seconds: number | null;
   status: string;
+  execution_mode: ModoExecucaoLaboratorio;
+  expected_events: EventosEsperadosLaboratorio;
   counts: {
     customer_messages: number;
     outbound_messages: number;
@@ -92,11 +125,15 @@ type RelatorioDaRodada = {
     }>;
   };
   findings: string[];
+  ai_analysis?: AnaliseIaDaRodada | null;
 };
 
 type RodadaDaJornada = {
   id: string;
   scenario_id: string | null;
+  agent_id: string | null;
+  execution_mode: ModoExecucaoLaboratorio;
+  expected_events: EventosEsperadosLaboratorio;
   phone_number: string;
   contact_name: string | null;
   script: PassoDaJornada[];
@@ -118,10 +155,19 @@ type CanalDaJornada = {
   phone_number: string | null;
 };
 
+type AgenteDoLaboratorio = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  paused_at: string | null;
+  published_version_id: string | null;
+};
+
 type DadosDoLaboratorio = {
   scenarios: CenarioDaJornada[];
   runs: RodadaDaJornada[];
   channels: CanalDaJornada[];
+  agents: AgenteDoLaboratorio[];
 };
 
 type ApiEnvelope<T> = { data: T };
@@ -167,6 +213,10 @@ const FORMULARIO_INICIAL = {
   description:
     "Cliente de prova de conceito que passa por triagem, contrato via ZapSign e pedido de reunião pós-assinatura.",
   channel_session_id: "",
+  agent_id: "",
+  execution_mode: "simulated" as ModoExecucaoLaboratorio,
+  sign_contract: true,
+  create_calendar_event: true,
   phone_number: "",
   contact_name: "Luan Rocha",
   default_delay_seconds: 120,
@@ -174,6 +224,8 @@ const FORMULARIO_INICIAL = {
   is_active: true,
   stepsText: JSON.stringify(PASSOS_PADRAO, null, 2),
 };
+
+type FormularioLaboratorio = typeof FORMULARIO_INICIAL;
 
 function formatarData(valor: string | null): string {
   if (!valor) return "-";
@@ -208,13 +260,19 @@ function statusDaRodada(status: RodadaDaJornada["status"]): { label: string; cla
   return { label: "Na fila", className: "border-muted-foreground/40 text-muted-foreground" };
 }
 
+function rotuloModoExecucao(mode: ModoExecucaoLaboratorio): string {
+  return mode === "simulated" ? "Simulação sem WhatsApp" : "WhatsApp real";
+}
+
 function relatorioMarkdown(run: RodadaDaJornada): string {
   const report = run.report;
   if (!report) return "";
+  const analysis = report.ai_analysis;
   const linhas = [
     `# Relatório da jornada ${run.id}`,
     "",
     `Status: ${statusDaRodada(run.status).label}`,
+    `Modo: ${rotuloModoExecucao(run.execution_mode)}`,
     `Telefone: ${run.phone_number}`,
     `Duração: ${formatarDuracao(report.duration_seconds)}`,
     `Primeira resposta: ${formatarDuracao(report.timing.first_response_seconds)}`,
@@ -231,6 +289,28 @@ function relatorioMarkdown(run: RodadaDaJornada): string {
     "## Achados",
     ...report.findings.map((finding) => `- ${finding}`),
     "",
+    ...(analysis
+      ? [
+          "## Análise de IA",
+          analysis.summary,
+          "",
+          "### Gaps",
+          ...analysis.gaps.map((item) => `- ${item}`),
+          "",
+          "### Melhorias",
+          ...analysis.improvements.map((item) => `- ${item}`),
+          "",
+          "### FAQs",
+          ...analysis.faqs.map((item) => `- ${item}`),
+          "",
+          "### Riscos",
+          ...analysis.risks.map((item) => `- ${item}`),
+          "",
+          "### Próximos testes",
+          ...analysis.next_tests.map((item) => `- ${item}`),
+          "",
+        ]
+      : []),
     "## Transcrição",
     ...report.transcript.map(
       (message) => `- ${formatarData(message.at)} · ${message.actor}: ${message.body ?? ""}`,
@@ -254,11 +334,13 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
   const [dados, setDados] = useState<DadosDoLaboratorio | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [gerandoRoteiro, setGerandoRoteiro] = useState(false);
   const [rodando, setRodando] = useState(false);
   const [completingRunId, setCompletingRunId] = useState<string | null>(null);
+  const [analyzingRunId, setAnalyzingRunId] = useState<string | null>(null);
   const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
   const [resetarContato, setResetarContato] = useState(true);
-  const [form, setForm] = useState(FORMULARIO_INICIAL);
+  const [form, setForm] = useState<FormularioLaboratorio>(FORMULARIO_INICIAL);
 
   const carregar = useCallback(async () => {
     if (!habilitado) return;
@@ -266,11 +348,13 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       const res = await apiClient.get<ApiEnvelope<DadosDoLaboratorio>>("/api/v1/ai/lab/scenarios");
       setDados(res.data);
       setErro(null);
-      setForm((atual) =>
-        atual.channel_session_id || !res.data.channels[0]
-          ? atual
-          : { ...atual, channel_session_id: res.data.channels[0].id },
-      );
+      const primeiroCanal = res.data.channels[0]?.id ?? "";
+      const primeiroAgente = res.data.agents[0]?.id ?? "";
+      setForm((atual) => ({
+        ...atual,
+        channel_session_id: atual.channel_session_id || primeiroCanal,
+        agent_id: atual.agent_id || primeiroAgente,
+      }));
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não consegui carregar o laboratório.");
     }
@@ -301,6 +385,10 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       name: cenario.name,
       description: cenario.description ?? "",
       channel_session_id: cenario.channel_session_id ?? "",
+      agent_id: cenario.agent_id ?? "",
+      execution_mode: cenario.execution_mode,
+      sign_contract: cenario.expected_events.sign_contract !== false,
+      create_calendar_event: cenario.expected_events.create_calendar_event !== false,
       phone_number: cenario.phone_number,
       contact_name: cenario.contact_name ?? "",
       default_delay_seconds: cenario.default_delay_seconds,
@@ -319,6 +407,12 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
         name: form.name,
         description: form.description || null,
         channel_session_id: form.channel_session_id || null,
+        agent_id: form.agent_id || null,
+        execution_mode: form.execution_mode,
+        expected_events: {
+          sign_contract: form.sign_contract,
+          create_calendar_event: form.create_calendar_event,
+        },
         phone_number: form.phone_number,
         contact_name: form.contact_name || null,
         default_delay_seconds: Number(form.default_delay_seconds),
@@ -332,6 +426,50 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       setErro(err instanceof Error ? err.message : "Não consegui salvar o cenário.");
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function gerarRoteiroComIa(): Promise<void> {
+    setGerandoRoteiro(true);
+    try {
+      const res = await apiClient.post<ApiEnvelope<RoteiroGeradoDaJornada>>(
+        "/api/v1/ai/lab/scenarios/generate",
+        {
+          agent_id: form.agent_id || null,
+          name: form.name,
+          description: form.description || null,
+          expected_events: {
+            sign_contract: form.sign_contract,
+            create_calendar_event: form.create_calendar_event,
+          },
+          message_count: 14,
+          default_delay_seconds: Number(form.default_delay_seconds),
+        },
+      );
+      setForm((atual) => ({
+        ...atual,
+        stepsText: JSON.stringify(res.data.steps, null, 2),
+      }));
+      setErro(null);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não consegui gerar a bateria com IA.");
+    } finally {
+      setGerandoRoteiro(false);
+    }
+  }
+
+  async function analisarRodada(runId: string): Promise<void> {
+    setAnalyzingRunId(runId);
+    try {
+      await apiClient.post<ApiEnvelope<RodadaDaJornada>>(
+        `/api/v1/ai/lab/runs/${runId}/analyze`,
+        {},
+      );
+      await carregar();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não consegui analisar a rodada com IA.");
+    } finally {
+      setAnalyzingRunId(null);
     }
   }
 
@@ -422,7 +560,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
               <div>
                 <h2 className="text-lg font-semibold">Cenário</h2>
                 <p className="text-sm text-muted-foreground">
-                  O roteiro abaixo vira mensagens reais do contato de teste.
+                  O roteiro abaixo vira mensagens do contato de teste.
                 </p>
               </div>
               <Badge variant="outline">{formatarDuracao(totalDoRoteiro)} de roteiro</Badge>
@@ -458,6 +596,48 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                         {canal.label} {canal.phone_number ? `· ${canal.phone_number}` : ""}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Agente</Label>
+                <Select
+                  value={form.agent_id || "auto"}
+                  onValueChange={(value) =>
+                    setForm((atual) => ({ ...atual, agent_id: value === "auto" ? "" : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha o agente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Resolver automaticamente</SelectItem>
+                    {(dados?.agents ?? []).map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                        {agent.paused_at ? " · pausado" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Modo</Label>
+                <Select
+                  value={form.execution_mode}
+                  onValueChange={(value) =>
+                    setForm((atual) => ({
+                      ...atual,
+                      execution_mode: value === "real_whatsapp" ? "real_whatsapp" : "simulated",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha o modo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="simulated">Simular sem WhatsApp</SelectItem>
+                    <SelectItem value="real_whatsapp">Enviar no WhatsApp real</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -517,7 +697,19 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
             </div>
 
             <div className="mt-4 space-y-2">
-              <Label htmlFor="lab-steps">Mensagens do cliente</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="lab-steps">Mensagens do cliente</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void gerarRoteiroComIa()}
+                  disabled={gerandoRoteiro}
+                >
+                  <Sparkles size={14} aria-hidden />
+                  <span>{gerandoRoteiro ? "Gerando..." : "Gerar com IA"}</span>
+                </Button>
+              </div>
               <Textarea
                 id="lab-steps"
                 className="min-h-[360px] font-mono text-xs"
@@ -527,21 +719,45 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={form.is_active}
-                  onCheckedChange={(checked) =>
-                    setForm((atual) => ({ ...atual, is_active: checked }))
-                  }
-                />
-                <span>Cenário ativo</span>
-              </label>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={form.is_active}
+                    onCheckedChange={(checked) =>
+                      setForm((atual) => ({ ...atual, is_active: checked }))
+                    }
+                  />
+                  <span>Cenário ativo</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={form.sign_contract}
+                    onCheckedChange={(checked) =>
+                      setForm((atual) => ({ ...atual, sign_contract: checked }))
+                    }
+                  />
+                  <span>Assinar contrato no teste</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={form.create_calendar_event}
+                    onCheckedChange={(checked) =>
+                      setForm((atual) => ({ ...atual, create_calendar_event: checked }))
+                    }
+                  />
+                  <span>Esperar agenda no teste</span>
+                </label>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() =>
-                    setForm({ ...FORMULARIO_INICIAL, channel_session_id: form.channel_session_id })
+                    setForm({
+                      ...FORMULARIO_INICIAL,
+                      channel_session_id: form.channel_session_id,
+                      agent_id: form.agent_id,
+                    })
                   }
                 >
                   Usar modelo
@@ -579,7 +795,8 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                     <div className="min-w-0">
                       <h3 className="truncate text-sm font-medium">{cenario.name}</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {cenario.steps.length} mensagens · {cenario.phone_number}
+                        {cenario.steps.length} mensagens · {cenario.phone_number} ·{" "}
+                        {rotuloModoExecucao(cenario.execution_mode)}
                       </p>
                     </div>
                     <Badge variant="outline">{cenario.is_active ? "Ativo" : "Inativo"}</Badge>
@@ -594,7 +811,11 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       disabled={rodando || !cenario.is_active}
                     >
                       <Play size={14} aria-hidden />
-                      <span>Iniciar</span>
+                      <span>
+                        {cenario.execution_mode === "simulated"
+                          ? "Rodar simulação"
+                          : "Enviar teste real"}
+                      </span>
                     </Button>
                   </div>
                 </div>
@@ -621,6 +842,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                         <Badge variant="outline" className={status.className}>
                           {status.label}
                         </Badge>
+                        <Badge variant="outline">{rotuloModoExecucao(run.execution_mode)}</Badge>
                       </div>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {run.phone_number} · passo{" "}
@@ -664,9 +886,22 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                         </Button>
                       )}
                       {run.report && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void analisarRodada(run.id)}
+                          disabled={analyzingRunId === run.id}
+                        >
+                          <Sparkles size={14} aria-hidden />
+                          <span>
+                            {run.report.ai_analysis ? "Refazer análise IA" : "Analisar com IA"}
+                          </span>
+                        </Button>
+                      )}
+                      {run.report && (
                         <Button size="sm" variant="outline" onClick={() => baixarRelatorio(run)}>
                           <Download size={14} aria-hidden />
-                          <span>Baixar</span>
+                          <span>Baixar relatório</span>
                         </Button>
                       )}
                     </div>
@@ -736,6 +971,35 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                           ))}
                         </div>
                       </div>
+
+                      {run.report.ai_analysis && (
+                        <div className="rounded-sm border border-border p-3 lg:col-span-2">
+                          <h4 className="text-sm font-medium">Análise de IA</h4>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {run.report.ai_analysis.summary}
+                          </p>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            {[
+                              ["Gaps", run.report.ai_analysis.gaps],
+                              ["Melhorias", run.report.ai_analysis.improvements],
+                              ["FAQs", run.report.ai_analysis.faqs],
+                              ["Riscos", run.report.ai_analysis.risks],
+                              ["Próximos testes", run.report.ai_analysis.next_tests],
+                            ].map(([titulo, itens]) => (
+                              <div key={String(titulo)} className="rounded-sm bg-muted p-3">
+                                <h5 className="text-xs font-medium text-muted-foreground uppercase">
+                                  {String(titulo)}
+                                </h5>
+                                <ul className="mt-2 space-y-1 text-sm">
+                                  {(itens as string[]).map((item) => (
+                                    <li key={item}>- {item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </Card>

@@ -23,6 +23,9 @@ function cenario(overrides: Partial<CenarioDaJornada> = {}): CenarioDaJornada {
     name: "Caminho feliz",
     description: null,
     channel_session_id: "33333333-3333-4333-8333-333333333333",
+    agent_id: null,
+    execution_mode: "simulated",
+    expected_events: { sign_contract: true, create_calendar_event: true },
     phone_number: "+5511999999999",
     contact_name: "Cliente Teste",
     steps: [{ body: "Oi" }, { body: "Quero saber se tenho direito.", delay_seconds: 45 }],
@@ -54,6 +57,10 @@ class ConsultaFake implements PromiseLike<RespostaFake> {
   }
 
   is(): this {
+    return this;
+  }
+
+  not(): this {
     return this;
   }
 
@@ -90,6 +97,11 @@ describe("laboratório de jornadas reais", () => {
     expect(parsed.phone_number).toBe("+551151770706");
     expect(parsed.steps[0]?.delay_seconds).toBe(90);
     expect(parsed.default_delay_seconds).toBe(120);
+    expect(parsed.execution_mode).toBe("simulated");
+    expect(parsed.expected_events).toEqual({
+      sign_contract: true,
+      create_calendar_event: true,
+    });
   });
 
   it("recusa telefone sem DDI para não simular contato ambíguo", () => {
@@ -137,6 +149,15 @@ describe("laboratório de jornadas reais", () => {
           provider: "waha",
         },
       ],
+      ai_agents: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          name: "Talismã Previdenciário",
+          is_active: true,
+          paused_at: null,
+          published_version_id: "55555555-5555-4555-8555-555555555555",
+        },
+      ],
     };
     const client = {
       from(table: string) {
@@ -153,12 +174,22 @@ describe("laboratório de jornadas reais", () => {
       "id,display_name,status,phone_number,waha_session_name,provider",
     );
     expect(selects.get("channel_sessions")).not.toContain("label");
+    expect(selects.get("ai_agents")).toBe("id,name,is_active,paused_at,published_version_id");
     expect(result.channels).toEqual([
       {
         id: "33333333-3333-4333-8333-333333333333",
         label: "Talismã WhatsApp",
         phone_number: "+551151770706",
         status: "WORKING",
+      },
+    ]);
+    expect(result.agents).toEqual([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        name: "Talismã Previdenciário",
+        is_active: true,
+        paused_at: null,
+        published_version_id: "55555555-5555-4555-8555-555555555555",
       },
     ]);
   });

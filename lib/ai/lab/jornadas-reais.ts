@@ -1,10 +1,15 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { generateText } from "ai";
 import { z } from "zod";
 
+import { DEFAULT_CLASSIFIER_MODEL, gatewayConfig, gatewayHeaders } from "@/lib/ai/gateway";
+import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { resetarContatoDeTeste } from "@/lib/contacts/resetar-contato-de-teste";
 import { dispatchWahaEvent, type SessionStatusRow, type WahaEnvelope } from "@/lib/waha/ingest";
+import { ZAPSIGN_DOCUMENT_ENTITY_KIND, ZAPSIGN_DOCUMENT_SIGNED_EVENT } from "@/lib/zapsign/events";
+import { ZAPSIGN_PROVIDER } from "@/lib/zapsign/service";
 
 type LinhaGenerica = Record<string, unknown>;
 type TabelaGenerica = {
@@ -30,6 +35,21 @@ const telefoneSchema = z
   .trim()
   .regex(/^\+[1-9][0-9]{9,14}$/);
 
+export const AI_LAB_ANALYSIS_PURPOSE = "ai_lab_analysis";
+export const AI_LAB_SCENARIO_GENERATION_PURPOSE = "ai_lab_scenario_generation";
+
+const modoExecucaoSchema = z.enum(["simulated", "real_whatsapp"]).default("simulated");
+const eventosEsperadosSchema = z
+  .object({
+    sign_contract: z.boolean().default(true),
+    create_calendar_event: z.boolean().default(true),
+  })
+  .catchall(z.unknown())
+  .default({ sign_contract: true, create_calendar_event: true });
+
+export type ModoExecucaoLaboratorio = z.infer<typeof modoExecucaoSchema>;
+export type EventosEsperadosLaboratorio = z.infer<typeof eventosEsperadosSchema>;
+
 export const passoDaJornadaSchema = z.object({
   body: z.string().trim().min(1).max(4000),
   delay_seconds: z.coerce.number().int().min(10).max(86_400).optional(),
@@ -43,6 +63,9 @@ export const cenarioJornadaSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).optional().nullable(),
   channel_session_id: z.string().uuid().nullable(),
+  agent_id: z.string().uuid().optional().nullable(),
+  execution_mode: modoExecucaoSchema,
+  expected_events: eventosEsperadosSchema,
   phone_number: telefoneSchema,
   contact_name: z.string().trim().max(120).optional().nullable(),
   steps: z.array(passoDaJornadaSchema).min(1).max(60),
@@ -56,12 +79,24 @@ export const iniciarRodadaSchema = z.object({
   reset_existing_contact: z.boolean().default(false),
 });
 
+export const gerarRoteiroJornadaSchema = z.object({
+  agent_id: z.string().uuid().optional().nullable(),
+  name: z.string().trim().max(120).optional().nullable(),
+  description: z.string().trim().max(2000).optional().nullable(),
+  expected_events: eventosEsperadosSchema,
+  message_count: z.coerce.number().int().min(4).max(30).default(14),
+  default_delay_seconds: z.coerce.number().int().min(10).max(3600).default(120),
+});
+
 export interface CenarioDaJornada {
   id: string;
   organization_id: string;
   name: string;
   description: string | null;
   channel_session_id: string | null;
+  agent_id: string | null;
+  execution_mode: ModoExecucaoLaboratorio;
+  expected_events: EventosEsperadosLaboratorio;
   phone_number: string;
   contact_name: string | null;
   steps: PassoDaJornada[];
@@ -77,6 +112,9 @@ export interface RodadaDaJornada {
   organization_id: string;
   scenario_id: string | null;
   channel_session_id: string | null;
+  agent_id: string | null;
+  execution_mode: ModoExecucaoLaboratorio;
+  expected_events: EventosEsperadosLaboratorio;
   contact_id: string | null;
   phone_number: string;
   contact_name: string | null;
@@ -94,6 +132,14 @@ export interface RodadaDaJornada {
   last_error: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgenteDoLaboratorio {
+  id: string;
+  name: string;
+  is_active: boolean;
+  paused_at: string | null;
+  published_version_id: string | null;
 }
 
 interface CanalDaRodada {
@@ -146,6 +192,8 @@ export interface RelatorioDaRodada {
   generated_at: string;
   duration_seconds: number | null;
   status: RodadaDaJornada["status"];
+  execution_mode: ModoExecucaoLaboratorio;
+  expected_events: EventosEsperadosLaboratorio;
   counts: {
     customer_messages: number;
     outbound_messages: number;
@@ -174,6 +222,27 @@ export interface RelatorioDaRodada {
     ai_runs: LinhaRunIa[];
   };
   findings: string[];
+  ai_analysis?: AnaliseIaDaRodada | null;
+}
+
+export interface AnaliseIaDaRodada {
+  generated_at: string;
+  model_id: string;
+  model_origin: string;
+  summary: string;
+  gaps: string[];
+  improvements: string[];
+  faqs: string[];
+  risks: string[];
+  next_tests: string[];
+}
+
+export interface RoteiroGeradoDaJornada {
+  generated_at: string;
+  model_id: string;
+  model_origin: string;
+  steps: PassoDaJornada[];
+  notes: string[];
 }
 
 function anyDb(client: SupabaseClient): AnyClient {
@@ -188,6 +257,12 @@ function linha(data: unknown): Record<string, unknown> | null {
   return data && typeof data === "object" ? (data as Record<string, unknown>) : null;
 }
 
+function objeto(data: unknown): Record<string, unknown> {
+  return data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : {};
+}
+
 function erroCurto(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   return message.split("\n", 1)[0]?.slice(0, 300) ?? "erro_desconhecido";
@@ -197,6 +272,16 @@ function normalizarPassos(valor: unknown): PassoDaJornada[] {
   return z.array(passoDaJornadaSchema).parse(valor);
 }
 
+function normalizarModoExecucao(valor: unknown): ModoExecucaoLaboratorio {
+  const parsed = modoExecucaoSchema.safeParse(valor);
+  return parsed.success ? parsed.data : "simulated";
+}
+
+function normalizarEventosEsperados(valor: unknown): EventosEsperadosLaboratorio {
+  const parsed = eventosEsperadosSchema.safeParse(valor);
+  return parsed.success ? parsed.data : { sign_contract: true, create_calendar_event: true };
+}
+
 function parseCenario(row: Record<string, unknown>): CenarioDaJornada {
   return {
     id: String(row.id),
@@ -204,6 +289,9 @@ function parseCenario(row: Record<string, unknown>): CenarioDaJornada {
     name: String(row.name),
     description: typeof row.description === "string" ? row.description : null,
     channel_session_id: typeof row.channel_session_id === "string" ? row.channel_session_id : null,
+    agent_id: typeof row.agent_id === "string" ? row.agent_id : null,
+    execution_mode: normalizarModoExecucao(row.execution_mode),
+    expected_events: normalizarEventosEsperados(row.expected_events),
     phone_number: String(row.phone_number),
     contact_name: typeof row.contact_name === "string" ? row.contact_name : null,
     steps: normalizarPassos(row.steps),
@@ -221,6 +309,9 @@ function parseRodada(row: Record<string, unknown>): RodadaDaJornada {
     organization_id: String(row.organization_id),
     scenario_id: typeof row.scenario_id === "string" ? row.scenario_id : null,
     channel_session_id: typeof row.channel_session_id === "string" ? row.channel_session_id : null,
+    agent_id: typeof row.agent_id === "string" ? row.agent_id : null,
+    execution_mode: normalizarModoExecucao(row.execution_mode),
+    expected_events: normalizarEventosEsperados(row.expected_events),
     contact_id: typeof row.contact_id === "string" ? row.contact_id : null,
     phone_number: String(row.phone_number),
     contact_name: typeof row.contact_name === "string" ? row.contact_name : null,
@@ -239,6 +330,17 @@ function parseRodada(row: Record<string, unknown>): RodadaDaJornada {
     last_error: typeof row.last_error === "string" ? row.last_error : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+  };
+}
+
+function parseAgente(row: Record<string, unknown>): AgenteDoLaboratorio {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    is_active: row.is_active !== false,
+    paused_at: typeof row.paused_at === "string" ? row.paused_at : null,
+    published_version_id:
+      typeof row.published_version_id === "string" ? row.published_version_id : null,
   };
 }
 
@@ -284,6 +386,7 @@ export async function listarLaboratorioDeJornadas(
 ): Promise<{
   scenarios: CenarioDaJornada[];
   runs: RodadaDaJornada[];
+  agents: AgenteDoLaboratorio[];
   channels: Array<{
     id: string;
     label: string;
@@ -296,6 +399,7 @@ export async function listarLaboratorioDeJornadas(
     { data: scenarios, error: scenariosErr },
     { data: runs, error: runsErr },
     { data: channels, error: channelsErr },
+    { data: agents, error: agentsErr },
   ] = await Promise.all([
     db
       .from("ai_lab_scenarios")
@@ -314,14 +418,24 @@ export async function listarLaboratorioDeJornadas(
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("created_at", { ascending: false }),
+    db
+      .from("ai_agents")
+      .select("id,name,is_active,paused_at,published_version_id")
+      .eq("organization_id", organizationId)
+      .is("archived_at", null)
+      .not("published_version_id", "is", null)
+      .order("priority", { ascending: false })
+      .order("created_at", { ascending: false }),
   ]);
   if (scenariosErr) throw new Error(scenariosErr.message);
   if (runsErr) throw new Error(runsErr.message);
   if (channelsErr) throw new Error(channelsErr.message);
+  if (agentsErr) throw new Error(agentsErr.message);
 
   return {
     scenarios: linhas(scenarios).map(parseCenario),
     runs: linhas(runs).map(parseRodada),
+    agents: linhas(agents).map(parseAgente),
     channels: linhas(channels).map((c) => ({
       id: String(c.id),
       label: rotuloDoCanal(c),
@@ -369,6 +483,9 @@ export async function salvarCenarioDaJornada(
     name: input.name,
     description: input.description ?? null,
     channel_session_id: input.channel_session_id,
+    agent_id: input.agent_id ?? null,
+    execution_mode: input.execution_mode,
+    expected_events: input.expected_events,
     phone_number: input.phone_number,
     contact_name: input.contact_name ?? null,
     steps: input.steps,
@@ -443,6 +560,9 @@ export async function iniciarRodadaDaJornada(
       organization_id: organizationId,
       scenario_id: scenario.id,
       channel_session_id: scenario.channel_session_id,
+      agent_id: scenario.agent_id,
+      execution_mode: scenario.execution_mode,
+      expected_events: scenario.expected_events,
       phone_number: scenario.phone_number,
       contact_name: scenario.contact_name,
       script: materializarPassosDaRodada(scenario),
@@ -467,6 +587,9 @@ export async function iniciarRodadaDaJornada(
       reset_existing_contact: input.reset_existing_contact,
       steps: scenario.steps.length,
       default_delay_seconds: scenario.default_delay_seconds,
+      agent_id: scenario.agent_id,
+      execution_mode: scenario.execution_mode,
+      expected_events: scenario.expected_events,
     },
   });
   return run;
@@ -565,6 +688,12 @@ export async function enviarProximoPassoDaRodada(
         _data: {
           notifyName: run.contact_name ?? "Cliente de teste",
           pushName: run.contact_name ?? "Cliente de teste",
+          deskcommLab: {
+            run_id: run.id,
+            execution_mode: run.execution_mode,
+            agent_id: run.agent_id,
+            step_index: run.current_step_index,
+          },
         },
       },
     };
@@ -654,6 +783,7 @@ function secondsBetween(a: string | null, b: string | null): number | null {
 }
 
 function findingsDoRelatorio(input: {
+  run: RodadaDaJornada;
   messages: LinhaMensagem[];
   docs: LinhaDocumento[];
   appointments: LinhaAgendamento[];
@@ -680,10 +810,141 @@ function findingsDoRelatorio(input: {
   if (input.appointments.length > 0 && !input.appointments.some((a) => a.meeting_url)) {
     findings.push("Agendamento criado, mas o link do Meet ainda não ficou disponível.");
   }
+  if (
+    input.run.expected_events.create_calendar_event &&
+    input.docs.some((d) => d.signed_at) &&
+    input.appointments.length === 0
+  ) {
+    findings.push(
+      "A bateria esperava reunião pós-contrato, mas nenhum evento de agenda foi criado.",
+    );
+  }
+  if (
+    input.run.expected_events.sign_contract &&
+    input.docs.length > 0 &&
+    !input.docs.some((d) => d.signed_at)
+  ) {
+    findings.push(
+      "A bateria esperava assinatura de contrato, mas nenhum documento ficou assinado.",
+    );
+  }
   if (findings.length === 0) {
     findings.push("A jornada observada fechou sem falhas automáticas evidentes.");
   }
   return findings;
+}
+
+async function leadIdsDoContato(
+  client: AnyClient,
+  organizationId: string,
+  contactId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("crm_leads")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contactId);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<{ id: string }>).map((lead) => lead.id);
+}
+
+async function simularAssinaturasPendentesDaRodada(
+  client: AnyClient,
+  run: RodadaDaJornada,
+  now = new Date(),
+): Promise<number> {
+  if (run.execution_mode !== "simulated") return 0;
+  if (run.expected_events.sign_contract === false) return 0;
+
+  let contactId = run.contact_id;
+  if (!contactId)
+    contactId = await contatoPorTelefone(client, run.organization_id, run.phone_number);
+  if (!contactId) return 0;
+
+  const since = run.started_at ?? run.created_at;
+  const leadIds = await leadIdsDoContato(client, run.organization_id, contactId);
+  let query = client
+    .from("zapsign_documents")
+    .select("id,external_token,lead_id,contact_id,status,signed_at,created_at,provider_payload")
+    .eq("organization_id", run.organization_id)
+    .gte("created_at", since)
+    .is("signed_at", null)
+    .neq("status", "signed")
+    .limit(10);
+
+  if (leadIds.length > 0) {
+    query = query.or(`contact_id.eq.${contactId},lead_id.in.(${leadIds.join(",")})`);
+  } else {
+    query = query.eq("contact_id", contactId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const docs = linhas(data);
+  let signed = 0;
+  for (const doc of docs) {
+    const documentId = typeof doc.id === "string" ? doc.id : null;
+    const token = typeof doc.external_token === "string" ? doc.external_token : null;
+    if (!documentId) continue;
+    const providerPayload = objeto(doc.provider_payload);
+
+    const signedAt = now.toISOString();
+    const { data: updated, error: updateErr } = await client
+      .from("zapsign_documents")
+      .update({
+        status: "signed",
+        signed_at: signedAt,
+        last_event_type: "doc_signed",
+        last_event_at: signedAt,
+        provider_payload: {
+          ...providerPayload,
+          ai_lab_simulation: {
+            run_id: run.id,
+            signed_at: signedAt,
+          },
+        },
+      })
+      .eq("organization_id", run.organization_id)
+      .eq("id", documentId)
+      .is("signed_at", null)
+      .select("id,external_token,lead_id,contact_id,status")
+      .maybeSingle();
+    if (updateErr) throw new Error(updateErr.message);
+    const row = linha(updated);
+    if (!row) continue;
+
+    const { error: eventError } = await client.rpc(
+      "emit_event" as never,
+      {
+        p_event_type: ZAPSIGN_DOCUMENT_SIGNED_EVENT,
+        p_entity_kind: ZAPSIGN_DOCUMENT_ENTITY_KIND,
+        p_entity_id: documentId,
+        p_payload: {
+          document_id: documentId,
+          document_token: typeof row.external_token === "string" ? row.external_token : token,
+          lead_id: typeof row.lead_id === "string" ? row.lead_id : null,
+          contact_id: typeof row.contact_id === "string" ? row.contact_id : contactId,
+          status: "signed",
+          provider_event_type: "doc_signed",
+        },
+        p_metadata: {
+          provider: ZAPSIGN_PROVIDER,
+          external_id: `ai_lab:${run.id}:${documentId}`,
+          simulated: true,
+        },
+        p_organization_id: run.organization_id,
+      } as never,
+    );
+    if (eventError) throw new Error(eventError.message);
+    await registrarEvento(client, {
+      organizationId: run.organization_id,
+      runId: run.id,
+      kind: "zapsign_signed_simulated",
+      details: { document_id: documentId, contact_id: contactId },
+    });
+    signed += 1;
+  }
+  return signed;
 }
 
 export async function gerarRelatorioDaRodada(
@@ -773,6 +1034,8 @@ export async function gerarRelatorioDaRodada(
     generated_at: now.toISOString(),
     duration_seconds: secondsBetween(run.started_at ?? run.created_at, now.toISOString()),
     status: run.status,
+    execution_mode: run.execution_mode,
+    expected_events: run.expected_events,
     counts: {
       customer_messages: messages.filter((m) => m.direction === "inbound").length,
       outbound_messages: messages.filter((m) => m.direction === "outbound").length,
@@ -800,8 +1063,282 @@ export async function gerarRelatorioDaRodada(
       appointments,
       ai_runs: aiRuns,
     },
-    findings: findingsDoRelatorio({ messages, docs, appointments, aiRuns }),
+    findings: findingsDoRelatorio({ run, messages, docs, appointments, aiRuns }),
   };
+}
+
+function arrayDeTextos(valor: unknown): string[] {
+  if (!Array.isArray(valor)) return [];
+  return valor.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function objetoJsonDaResposta(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const candidate = fenced || trimmed;
+  try {
+    return JSON.parse(candidate) as Record<string, unknown>;
+  } catch {
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
+    }
+    throw new Error("analise_ia_json_invalido");
+  }
+}
+
+function parseAnaliseIaDaRodada(
+  text: string,
+  resolved: { modelId: string; origem: string },
+  now: Date,
+): AnaliseIaDaRodada {
+  const json = objetoJsonDaResposta(text);
+  return {
+    generated_at: now.toISOString(),
+    model_id: resolved.modelId,
+    model_origin: resolved.origem,
+    summary: typeof json.summary === "string" ? json.summary.slice(0, 2000) : "",
+    gaps: arrayDeTextos(json.gaps).slice(0, 12),
+    improvements: arrayDeTextos(json.improvements).slice(0, 12),
+    faqs: arrayDeTextos(json.faqs).slice(0, 12),
+    risks: arrayDeTextos(json.risks).slice(0, 12),
+    next_tests: arrayDeTextos(json.next_tests).slice(0, 12),
+  };
+}
+
+async function contextoDoAgenteParaGeracao(
+  client: SupabaseClient,
+  organizationId: string,
+  agentId: string | null | undefined,
+): Promise<{ name: string | null; description: string | null; system_prompt: string | null }> {
+  if (!agentId) return { name: null, description: null, system_prompt: null };
+  const db = anyDb(client);
+  const { data, error } = await db
+    .from("ai_agents")
+    .select("id, name, description, system_prompt, published_version_id")
+    .eq("organization_id", organizationId)
+    .eq("id", agentId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const row = linha(data);
+  if (!row) return { name: null, description: null, system_prompt: null };
+
+  let systemPrompt = typeof row.system_prompt === "string" ? row.system_prompt : null;
+  if (typeof row.published_version_id === "string") {
+    const { data: version, error: versionErr } = await db
+      .from("ai_agent_versions")
+      .select("system_prompt")
+      .eq("organization_id", organizationId)
+      .eq("id", row.published_version_id)
+      .maybeSingle();
+    if (versionErr) throw new Error(versionErr.message);
+    const versionRow = linha(version);
+    if (typeof versionRow?.system_prompt === "string") systemPrompt = versionRow.system_prompt;
+  }
+
+  return {
+    name: typeof row.name === "string" ? row.name : null,
+    description: typeof row.description === "string" ? row.description : null,
+    system_prompt: systemPrompt,
+  };
+}
+
+function promptDaGeracaoDeRoteiro(
+  input: z.infer<typeof gerarRoteiroJornadaSchema>,
+  agent: { name: string | null; description: string | null; system_prompt: string | null },
+): string {
+  return [
+    "Crie uma bateria de teste para simular um cliente conversando com um agente jurídico no WhatsApp.",
+    "Devolva APENAS JSON válido. Não escreva comentários fora do JSON.",
+    "",
+    "Formato obrigatório:",
+    '{"steps":[{"body":"mensagem que o cliente envia","delay_seconds":120,"note":"objetivo dessa mensagem"}],"notes":["observação curta"]}',
+    "",
+    "Regras:",
+    "- Gere somente mensagens do cliente. Nunca inclua respostas da IA, atendente ou CRM.",
+    "- Use dados fictícios, mas completos o bastante para acionar contrato e agenda quando solicitado.",
+    "- Faça a conversa parecer natural, com uma etapa por mensagem e sem textos longos demais.",
+    "- Cubra objeções leves, pedido de link do contrato pelo chat e confirmação de agenda quando fizer sentido.",
+    "- Não use dados reais sensíveis; CPFs, RGs, e-mails e endereços devem ser claramente fictícios.",
+    "",
+    `Quantidade alvo de mensagens: ${input.message_count}`,
+    `Atraso padrão sugerido: ${input.default_delay_seconds}s`,
+    `Cenário: ${input.name || "sem nome informado"}`,
+    `Descrição/objetivo: ${input.description || "gerar caminho feliz com pontos de validação"}`,
+    `Esperar assinatura de contrato: ${input.expected_events.sign_contract ? "sim" : "não"}`,
+    `Esperar agendamento: ${input.expected_events.create_calendar_event ? "sim" : "não"}`,
+    "",
+    "Agente selecionado:",
+    `Nome: ${agent.name || "não informado"}`,
+    `Descrição: ${agent.description || "não informada"}`,
+    "Prompt publicado/fonte do agente, para alinhar o teste:",
+    (agent.system_prompt || "não informado").slice(0, 6000),
+  ].join("\n");
+}
+
+function parseRoteiroGeradoDaJornada(
+  text: string,
+  resolved: { modelId: string; origem: string },
+  now: Date,
+): RoteiroGeradoDaJornada {
+  const json = objetoJsonDaResposta(text);
+  const rawSteps = Array.isArray(json.steps)
+    ? json.steps
+    : Array.isArray(json.messages)
+      ? json.messages
+      : [];
+  const parsed = z.array(passoDaJornadaSchema).min(1).max(60).safeParse(rawSteps);
+  if (!parsed.success) throw new Error("roteiro_ia_json_invalido");
+  return {
+    generated_at: now.toISOString(),
+    model_id: resolved.modelId,
+    model_origin: resolved.origem,
+    steps: parsed.data,
+    notes: arrayDeTextos(json.notes).slice(0, 8),
+  };
+}
+
+export async function gerarRoteiroDaJornadaComIa(
+  client: SupabaseClient,
+  organizationId: string,
+  inputRaw: z.infer<typeof gerarRoteiroJornadaSchema>,
+  now = new Date(),
+): Promise<RoteiroGeradoDaJornada> {
+  const input = gerarRoteiroJornadaSchema.parse(inputRaw);
+  const resolved = await resolverModeloDoPonto(
+    AI_LAB_SCENARIO_GENERATION_PURPOSE,
+    organizationId,
+    DEFAULT_CLASSIFIER_MODEL,
+    { naFaltaUsarOPadraoDaOrganizacao: true },
+  );
+  if (!resolved) throw new Error("provedor_ia_indisponivel");
+
+  const agent = await contextoDoAgenteParaGeracao(client, organizationId, input.agent_id);
+  const cfg = gatewayConfig();
+  const generated = await generateText({
+    model: resolved.model,
+    system:
+      "Você cria baterias de teste realistas para QA de atendimento jurídico por WhatsApp. Seja concreto, natural e seguro.",
+    prompt: promptDaGeracaoDeRoteiro(input, agent),
+    temperature: 0.45,
+    maxOutputTokens: 2400,
+    maxRetries: 1,
+    headers: cfg ? gatewayHeaders({ organizationId }) : undefined,
+  });
+
+  const roteiro = parseRoteiroGeradoDaJornada(generated.text, resolved, now);
+  return {
+    ...roteiro,
+    steps: roteiro.steps.slice(0, input.message_count),
+  };
+}
+
+function promptDaAnaliseIa(run: RodadaDaJornada, report: RelatorioDaRodada): string {
+  const transcript = report.transcript
+    .slice(-80)
+    .map((message) => `${message.actor.toUpperCase()} [${message.at}]: ${message.body ?? ""}`)
+    .join("\n");
+  const efeitos = {
+    counts: report.counts,
+    timing: report.timing,
+    findings: report.findings,
+    expected_events: report.expected_events,
+    zapsign_documents: report.effects.zapsign_documents.map((doc) => ({
+      status: doc.status,
+      signed_at: doc.signed_at,
+      created_at: doc.created_at,
+    })),
+    appointments: report.effects.appointments.map((appointment) => ({
+      status: appointment.status,
+      starts_at: appointment.starts_at,
+      has_meet: Boolean(appointment.meeting_url),
+      has_google_event: Boolean(appointment.google_event_id),
+    })),
+    ai_runs: report.effects.ai_runs.map((aiRun) => ({
+      status: aiRun.status,
+      error_code: aiRun.error_code,
+      steps_count: aiRun.steps_count,
+    })),
+  };
+  return [
+    "Analise esta rodada de laboratório de atendimento jurídico e devolva APENAS JSON válido.",
+    "O objetivo é apontar gaps de atendimento, melhorias de prompt/processo, FAQs e próximos testes.",
+    "",
+    "Formato obrigatório:",
+    '{"summary":"...","gaps":["..."],"improvements":["..."],"faqs":["..."],"risks":["..."],"next_tests":["..."]}',
+    "",
+    `Rodada: ${run.id}`,
+    `Modo: ${run.execution_mode}`,
+    `Telefone: ${run.phone_number}`,
+    "",
+    "Efeitos observados:",
+    JSON.stringify(efeitos, null, 2),
+    "",
+    "Transcrição:",
+    transcript,
+  ].join("\n");
+}
+
+export async function gerarAnaliseIaDaRodada(
+  client: SupabaseClient,
+  organizationId: string,
+  runId: string,
+  now = new Date(),
+): Promise<RodadaDaJornada> {
+  const db = anyDb(client);
+  const { data, error } = await db
+    .from("ai_lab_runs")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("rodada_nao_encontrada");
+  const run = parseRodada(linha(data) ?? {});
+  const report = run.report ?? (await gerarRelatorioDaRodada(client, run, now));
+  if (report.transcript.length === 0) throw new Error("relatorio_sem_transcricao");
+
+  const resolved = await resolverModeloDoPonto(
+    AI_LAB_ANALYSIS_PURPOSE,
+    organizationId,
+    DEFAULT_CLASSIFIER_MODEL,
+    { naFaltaUsarOPadraoDaOrganizacao: true },
+  );
+  if (!resolved) throw new Error("provedor_ia_indisponivel");
+
+  const cfg = gatewayConfig();
+  const generated = await generateText({
+    model: resolved.model,
+    system:
+      "Você é um analista sênior de atendimento jurídico. Seja objetivo, prático e não invente fatos fora da transcrição.",
+    prompt: promptDaAnaliseIa(run, report),
+    temperature: 0.2,
+    maxOutputTokens: 2000,
+    maxRetries: 1,
+    headers: cfg ? gatewayHeaders({ organizationId }) : undefined,
+  });
+  const aiAnalysis = parseAnaliseIaDaRodada(generated.text, resolved, now);
+  const updatedReport: RelatorioDaRodada = { ...report, ai_analysis: aiAnalysis };
+  const { data: updated, error: updateErr } = await db
+    .from("ai_lab_runs")
+    .update({
+      report: updatedReport,
+      report_generated_at: updatedReport.generated_at,
+    })
+    .eq("organization_id", organizationId)
+    .eq("id", runId)
+    .select("*")
+    .maybeSingle();
+  if (updateErr) throw new Error(updateErr.message);
+  if (!updated) throw new Error("rodada_nao_atualizada");
+  await registrarEvento(db, {
+    organizationId,
+    runId,
+    kind: "analysis_generated",
+    details: { model_id: resolved.modelId, model_origin: resolved.origem },
+  });
+  return parseRodada(linha(updated) ?? {});
 }
 
 export async function concluirRodadaDaJornada(
@@ -821,6 +1358,7 @@ export async function concluirRodadaDaJornada(
   if (!data) throw new Error("rodada_nao_encontrada");
   const run = parseRodada(linha(data) ?? {});
   const report = await gerarRelatorioDaRodada(client, run, now);
+  if (run.report?.ai_analysis) report.ai_analysis = run.report.ai_analysis;
   const completedAt = now.toISOString();
   const { data: updated, error: updateErr } = await db
     .from("ai_lab_runs")
@@ -872,7 +1410,13 @@ export async function cancelarRodadaDaJornada(
 export async function executarTickDoLaboratorioDeJornadas(
   client: SupabaseClient,
   opts: { now?: Date; limit?: number } = {},
-): Promise<{ sent: number; observing: number; completed: number; failed: number }> {
+): Promise<{
+  sent: number;
+  observing: number;
+  completed: number;
+  failed: number;
+  signed_simulated: number;
+}> {
   const now = opts.now ?? new Date();
   const limit = opts.limit ?? 10;
   const db = anyDb(client);
@@ -886,13 +1430,35 @@ export async function executarTickDoLaboratorioDeJornadas(
     .limit(limit);
   if (error) throw new Error(error.message);
 
-  const summary = { sent: 0, observing: 0, completed: 0, failed: 0 };
+  const summary = { sent: 0, observing: 0, completed: 0, failed: 0, signed_simulated: 0 };
   for (const row of linhas(dueRuns)) {
     const result = await enviarProximoPassoDaRodada(client, parseRodada(row), now);
     if (result === "sent") summary.sent += 1;
     if (result === "observing") summary.observing += 1;
     if (result === "completed") summary.completed += 1;
     if (result === "failed") summary.failed += 1;
+  }
+
+  const { data: activeRows, error: activeErr } = await db
+    .from("ai_lab_runs")
+    .select("*")
+    .eq("execution_mode", "simulated")
+    .in("status", ["running", "observing"])
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+  if (activeErr) throw new Error(activeErr.message);
+
+  for (const row of linhas(activeRows)) {
+    try {
+      summary.signed_simulated += await simularAssinaturasPendentesDaRodada(
+        db,
+        parseRodada(row),
+        now,
+      );
+    } catch (err) {
+      await marcarRodadaComoFalha(db, parseRodada(row), erroCurto(err));
+      summary.failed += 1;
+    }
   }
 
   const { data: observingRows, error: observingErr } = await db

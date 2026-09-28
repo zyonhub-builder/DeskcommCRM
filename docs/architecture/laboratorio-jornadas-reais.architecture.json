@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Laboratório de Jornadas Reais",
-    "subtitle": "cenários de teste por organização, mensagens reais via ingest WAHA, observação de efeitos e relatório da rodada",
+    "subtitle": "cenários de teste por organização, simulação sem WhatsApp real, observação de efeitos e relatório analisável por IA",
     "output": "laboratorio-jornadas-reais.html",
     "quality_profile": "standard"
   },
@@ -23,8 +23,10 @@
     "rodadas",
     "cron",
     "ingest",
+    "saidaSimulada",
     "eventLog",
     "efeitos",
+    "analiseApi",
     "relatorio"
   ],
   "nodes": [
@@ -34,7 +36,7 @@
       "col": 1,
       "type": "ui",
       "label": "/app/ai/lab",
-      "sublabel": "admin · só ambiente de teste · cria cenário, inicia rodada, acompanha e baixa relatório"
+      "sublabel": "admin · só ambiente de teste · escolhe agente, modo, inicia rodada, acompanha e baixa relatório"
     },
     {
       "id": "cenarioApi",
@@ -77,9 +79,17 @@
       "sublabel": "envelope WAHA com external_id determinístico por rodada/passo"
     },
     {
+      "id": "saidaSimulada",
+      "lane": "canal",
+      "col": 7,
+      "type": "route",
+      "label": "messages.send simulado",
+      "sublabel": "conversa marcada como ai_lab intercepta saída automática e grava balão sem chamar o canal"
+    },
+    {
       "id": "eventLog",
       "lane": "atendimento",
-      "col": 7,
+      "col": 8,
       "type": "table",
       "label": "event_log",
       "sublabel": "message.received real; o agente responde pelo mesmo caminho de produção"
@@ -87,10 +97,10 @@
     {
       "id": "efeitos",
       "lane": "atendimento",
-      "col": 8,
+      "col": 9,
       "type": "table",
       "label": "messages, ai_agent_runs, zapsign_documents, calendar_appointments",
-      "sublabel": "efeitos reais observados depois do roteiro"
+      "sublabel": "efeitos observados; assinatura ZapSign pode ser simulada emitindo zapsign.document_signed"
     },
     {
       "id": "cenarios",
@@ -98,7 +108,7 @@
       "col": 3,
       "type": "table",
       "label": "ai_lab_scenarios",
-      "sublabel": "tenant-aware · telefone, canal, passos, atraso e janela de observação"
+      "sublabel": "tenant-aware · agente, modo, telefone, canal, passos, atraso e critérios esperados"
     },
     {
       "id": "rodadas",
@@ -106,7 +116,7 @@
       "col": 4,
       "type": "table",
       "label": "ai_lab_runs",
-      "sublabel": "script materializado, próximo passo, status, contato e relatório final"
+      "sublabel": "script, modo, agente, critérios, próximo passo, contato e relatório final"
     },
     {
       "id": "eventos",
@@ -119,10 +129,18 @@
     {
       "id": "relatorio",
       "lane": "persistencia",
-      "col": 9,
+      "col": 10,
       "type": "table",
       "label": "ai_lab_runs.report",
-      "sublabel": "contagens, tempos, transcrição, efeitos e achados baixáveis em Markdown"
+      "sublabel": "contagens, tempos, transcrição, efeitos, achados e análise IA baixáveis"
+    },
+    {
+      "id": "analiseApi",
+      "lane": "api",
+      "col": 10,
+      "type": "route",
+      "label": "POST runs/:id/analyze",
+      "sublabel": "usa ponto ai_lab_analysis para transformar relatório em gaps, FAQs e próximos testes"
     },
     {
       "id": "audit",
@@ -142,14 +160,34 @@
     { "id": "e6", "from": "cron", "to": "rodadas", "label": "busca próximo passo vencido" },
     { "id": "e7", "from": "cron", "to": "ingest", "label": "envia mensagem simulada do cliente" },
     { "id": "e8", "from": "ingest", "to": "eventLog", "label": "publica evento real" },
-    { "id": "e9", "from": "eventLog", "to": "efeitos", "label": "workers do atendimento agem" },
-    { "id": "e10", "from": "cron", "to": "eventos", "label": "registra passo/falha" },
-    { "id": "e11", "from": "efeitos", "to": "relatorio", "label": "resume após janela de observação" },
-    { "id": "e12", "from": "controleApi", "to": "relatorio", "label": "conclusão manual" },
-    { "id": "e13", "from": "tela", "to": "controleApi", "label": "cancelar ou gerar relatório" },
-    { "id": "e14", "from": "cenarioApi", "to": "audit", "label": "audita configuração" },
-    { "id": "e15", "from": "rodadaApi", "to": "audit", "label": "audita início" },
-    { "id": "e16", "from": "controleApi", "to": "audit", "label": "audita decisão" },
-    { "id": "e17", "from": "cron", "to": "audit", "label": "audita tick com efeito" }
+    { "id": "e9", "from": "eventLog", "to": "saidaSimulada", "label": "agente tenta responder" },
+    {
+      "id": "e10",
+      "from": "saidaSimulada",
+      "to": "efeitos",
+      "label": "grava saída sem transporte"
+    },
+    { "id": "e11", "from": "eventLog", "to": "efeitos", "label": "workers do atendimento agem" },
+    {
+      "id": "e12",
+      "from": "cron",
+      "to": "eventos",
+      "label": "registra passo/falha/assinatura simulada"
+    },
+    {
+      "id": "e13",
+      "from": "efeitos",
+      "to": "relatorio",
+      "label": "resume após janela de observação"
+    },
+    { "id": "e14", "from": "controleApi", "to": "relatorio", "label": "conclusão manual" },
+    { "id": "e15", "from": "tela", "to": "controleApi", "label": "cancelar ou gerar relatório" },
+    { "id": "e16", "from": "tela", "to": "analiseApi", "label": "analisar com IA" },
+    { "id": "e17", "from": "analiseApi", "to": "relatorio", "label": "grava ai_analysis" },
+    { "id": "e18", "from": "cenarioApi", "to": "audit", "label": "audita configuração" },
+    { "id": "e19", "from": "rodadaApi", "to": "audit", "label": "audita início" },
+    { "id": "e20", "from": "controleApi", "to": "audit", "label": "audita decisão" },
+    { "id": "e21", "from": "analiseApi", "to": "audit", "label": "audita análise" },
+    { "id": "e22", "from": "cron", "to": "audit", "label": "audita tick com efeito" }
   ]
 }

@@ -17,7 +17,10 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   if (!laboratorioDeJornadasHabilitado()) {
-    return ok({ disabled: true, sent: 0, observing: 0, completed: 0, failed: 0 }, { requestId });
+    return ok(
+      { disabled: true, sent: 0, observing: 0, completed: 0, failed: 0, signed_simulated: 0 },
+      { requestId },
+    );
   }
 
   try {

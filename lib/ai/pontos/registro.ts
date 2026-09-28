@@ -237,6 +237,30 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "nenhum",
   },
   {
+    id: "ai_lab_analysis",
+    rotulo: "Analisar teste do laboratório",
+    oQueFaz:
+      "Lê a transcrição e os efeitos de uma rodada do laboratório para apontar gaps, FAQs, riscos e próximos testes.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/ai/lab/jornadas-reais.ts",
+    sintomaDeFalha:
+      "A rodada continua com relatório operacional, mas sem diagnóstico por IA para melhorar o agente.",
+    registraEm: "nenhum",
+  },
+  {
+    id: "ai_lab_scenario_generation",
+    rotulo: "Gerar bateria do laboratório",
+    oQueFaz:
+      "Cria mensagens de cliente para uma bateria de teste do laboratório, alinhada ao agente escolhido e aos eventos esperados.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/ai/lab/jornadas-reais.ts",
+    sintomaDeFalha:
+      "O laboratório continua permitindo roteiro manual, mas não consegue sugerir uma bateria nova com IA.",
+    registraEm: "nenhum",
+  },
+  {
     id: "draft_suggestion",
     rotulo: "Sugerir resposta ao atendente",
     oQueFaz: "Escreve um rascunho de resposta para o atendente humano revisar antes de enviar.",

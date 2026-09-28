@@ -30,6 +30,7 @@ import {
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
+import { ambientePermiteResetDeTeste } from "@/lib/lab/ambiente-de-teste";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
@@ -150,6 +151,75 @@ interface Session {
    * (testes, caminhos internos) que não passam por uma linha de `channel_sessions`.
    */
   waha_session_name?: string | null;
+}
+
+interface ContextoLaboratorio {
+  run_id: string;
+  execution_mode: "simulated" | "real_whatsapp";
+  agent_id: string | null;
+  step_index: number | null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function contextoLaboratorioDoPayload(p: WahaPayload): ContextoLaboratorio | null {
+  if (!ambientePermiteResetDeTeste(process.env.NEXT_PUBLIC_APP_URL, process.env.NODE_ENV)) {
+    return null;
+  }
+  if (!p.id?.startsWith("lab_")) return null;
+  const data = p._data as Record<string, unknown> | null | undefined;
+  const raw = data?.deskcommLab;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const marker = raw as Record<string, unknown>;
+  const runId = typeof marker.run_id === "string" ? marker.run_id : "";
+  if (!UUID_RE.test(runId)) return null;
+  const mode = marker.execution_mode;
+  if (mode !== "simulated" && mode !== "real_whatsapp") return null;
+  const agentId =
+    typeof marker.agent_id === "string" && UUID_RE.test(marker.agent_id) ? marker.agent_id : null;
+  const stepIndex =
+    typeof marker.step_index === "number" && Number.isInteger(marker.step_index)
+      ? marker.step_index
+      : null;
+  return { run_id: runId, execution_mode: mode, agent_id: agentId, step_index: stepIndex };
+}
+
+function objetoMetadata(valor: unknown): Record<string, unknown> {
+  return valor && typeof valor === "object" && !Array.isArray(valor)
+    ? (valor as Record<string, unknown>)
+    : {};
+}
+
+async function marcarConversaDoLaboratorio(
+  admin: Admin,
+  input: {
+    organizationId: string;
+    conversationId: string;
+    contexto: ContextoLaboratorio;
+  },
+): Promise<void> {
+  const { data } = await admin
+    .from("conversations")
+    .select("metadata")
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.conversationId)
+    .maybeSingle();
+  const patch: Record<string, unknown> = {
+    metadata: {
+      ...objetoMetadata((data as { metadata?: unknown } | null)?.metadata),
+      ai_lab: input.contexto,
+    },
+  };
+  if (input.contexto.agent_id) {
+    patch.active_ai_agent_id = input.contexto.agent_id;
+    patch.active_intent = null;
+    patch.active_agent_set_at = new Date().toISOString();
+  }
+  await admin
+    .from("conversations")
+    .update(patch)
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.conversationId);
 }
 
 /**
@@ -686,6 +756,14 @@ async function handleInbound(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const contextoLab = contextoLaboratorioDoPayload(p);
+  if (contextoLab) {
+    await marcarConversaDoLaboratorio(admin, {
+      organizationId: session.organization_id,
+      conversationId,
+      contexto: contextoLab,
+    });
+  }
   const { data: insertedMessage, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -704,7 +782,11 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      metadata: {
+        raw_type: p.type,
+        ack_name: p.ackName,
+        ...(contextoLab ? { ai_lab: contextoLab } : {}),
+      },
     })
     .select("id")
     .maybeSingle();

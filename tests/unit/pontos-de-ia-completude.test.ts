@@ -132,6 +132,14 @@ const FORA_DO_SEAM: Record<string, { arquivo: string; marcador: string }> = {
     arquivo: "lib/whatsapp-history/report.ts",
     marcador: "WHATSAPP_HISTORY_ANALYSIS_PURPOSE",
   },
+  ai_lab_analysis: {
+    arquivo: "lib/ai/lab/jornadas-reais.ts",
+    marcador: "AI_LAB_ANALYSIS_PURPOSE",
+  },
+  ai_lab_scenario_generation: {
+    arquivo: "lib/ai/lab/jornadas-reais.ts",
+    marcador: "AI_LAB_SCENARIO_GENERATION_PURPOSE",
+  },
 };
 
 describe("registro de pontos de IA × código", () => {
