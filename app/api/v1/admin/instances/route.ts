@@ -210,9 +210,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     action: "platform.instance_alert_settings_updated",
     actorUserId: ctx.user.id,
     resourceType: "platform_instance_alert_settings",
-    resourceId: "1",
     bypassedRls: true,
     metadata: {
+      settings_id: 1,
       enabled: input.enabled,
       channel_organization_id: input.channel_organization_id,
       channel_session_id: input.channel_session_id,
@@ -247,7 +247,7 @@ async function carregarPainelDeInstancias(
     admin
       .from("channel_sessions")
       .select(
-        "id, organization_id, display_name, phone_number, provider, status, status_reason, last_health_check_at, last_status_change_at, updated_at, archived_at, organizations!inner(display_name, legal_name)",
+        "id, organization_id, display_name, phone_number, provider, status, status_reason, last_health_check_at, last_status_change_at, updated_at, archived_at, organizations!channel_sessions_organization_id_fkey(display_name, legal_name)",
       )
       .is("archived_at", null)
       .in("provider", [...PROVIDERS_DE_MENSAGEM])

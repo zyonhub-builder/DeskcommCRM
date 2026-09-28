@@ -154,7 +154,7 @@ function makeDb(knobsIniciais: Linha | null = null): Registro {
       return basicos && emLista && maiorQue && contemJsonb && erroReavaliavel;
     }
 
-    private executar(): { data: unknown; error: unknown } {
+    private executar(): { data: unknown; error: unknown; count?: number } {
       if (this.op === "select") {
         const linha = this.table === "channel_sessions" ? registro.sessao : registro.knobs;
         return { data: linha && this.casa(linha) ? linha : null, error: null };

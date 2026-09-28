@@ -111,7 +111,7 @@ describe("script público do site", () => {
       ctrlKey: true,
     });
     // Evita navegação apenas no teste; o script não pode cancelar o clique.
-    link.addEventListener("click", (e) => {
+    link.addEventListener("click", (e: MouseEvent) => {
       expect(e.defaultPrevented).toBe(false);
       e.preventDefault();
     });

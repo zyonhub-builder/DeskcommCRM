@@ -57,9 +57,9 @@ export async function POST(_req: NextRequest): Promise<Response> {
     action: "platform.instance_alert_test_sent",
     actorUserId: ctx.user.id,
     resourceType: "platform_instance_alert_settings",
-    resourceId: "1",
     bypassedRls: true,
     metadata: {
+      settings_id: 1,
       status: resultado.status,
       reason: resultado.reason,
       recipient_mask: resultado.recipientMask,
