@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { normalizarModoDeOrcamento } from "@/lib/agent-engine/edge/llm/orcamento";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { STATUS_QUE_AVISAM } from "@/lib/channels/health";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 
@@ -65,9 +66,8 @@ export async function GET(_req: NextRequest) {
     admin
       .from("channel_sessions")
       .select("*", { count: "exact", head: true })
-      .or(
-        `status.in.(ban_suspected,disconnected_unexpected),and(status.eq.disconnected,updated_at.gt.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()})`,
-      ),
+      .is("archived_at", null)
+      .in("status", [...STATUS_QUE_AVISAM]),
 
     admin
       .from("lgpd_requests")
@@ -87,7 +87,6 @@ export async function GET(_req: NextRequest) {
   // uso ≥80%", e ninguém tinha como perceber: o número era plausível.
 
   // ── Alerts: top 20, union from 4 sources ─────────────────────────────────
-  const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const cutoff5d = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
 
   const [
@@ -96,7 +95,7 @@ export async function GET(_req: NextRequest) {
     aiBudgetAlertsRes,
     overflowAlertsRes,
   ] = await Promise.all([
-    // WAHA ban alerts with org name
+    // Conexões de mensagem que não recebem nem enviam agora.
     admin
       .from("channel_sessions")
       .select(`
@@ -107,9 +106,8 @@ export async function GET(_req: NextRequest) {
         updated_at,
         organizations!inner(display_name)
       `)
-      .or(
-        `status.in.(ban_suspected,disconnected_unexpected),and(status.eq.disconnected,updated_at.gt.${cutoff24h})`,
-      )
+      .is("archived_at", null)
+      .in("status", [...STATUS_QUE_AVISAM])
       .order("updated_at", { ascending: false })
       .limit(20),
 
@@ -164,19 +162,20 @@ export async function GET(_req: NextRequest) {
   const alerts: AlertItem[] = [];
   const now = Date.now();
 
-  // WAHA alerts
+  // Alertas de instância.
   for (const row of wahaAlertsRes.data ?? []) {
     const org = (row as { organizations?: { display_name?: string } }).organizations;
+    const status = (row.status ?? "").toUpperCase();
     alerts.push({
       id: `waha-${row.id}`,
-      severity: row.status === "ban_suspected" ? "critical" : "warning",
+      severity: status === "SCAN_QR_CODE" || status === "FAILED" ? "critical" : "warning",
       kind: "waha_ban",
       tenant_id: row.organization_id,
       tenant_name: (org as { display_name?: string })?.display_name ?? row.organization_id,
       message:
-        row.status === "ban_suspected"
-          ? "Sessão WAHA com suspeita de banimento"
-          : `Sessão desconectada inesperadamente${row.status_reason ? `: ${row.status_reason}` : ""}`,
+        status === "SCAN_QR_CODE"
+          ? "Conexão desconectada — precisa escanear o QR"
+          : `Conexão fora do ar (${status || "status desconhecido"})${row.status_reason ? `: ${row.status_reason}` : ""}`,
       link: `/admin/tenants/${row.organization_id}/health`,
       created_at: row.updated_at,
     });

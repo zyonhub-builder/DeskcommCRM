@@ -12,6 +12,7 @@ import {
   Users,
   ShieldCheck,
   CalendarBlank,
+  WifiHigh,
   Palette,
   Key,
   EnvelopeSimple,
@@ -37,6 +38,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin/dashboard", label: "Dashboard", icon: Gauge },
+  { href: "/admin/instancias", label: "Instâncias", icon: WifiHigh },
   { href: "/admin/inbox", label: "Inbox", icon: ChatsCircle },
   { href: "/admin/tenants", label: "Tenants", icon: Buildings },
   { href: "/admin/audit", label: "Audit", icon: ClipboardText },

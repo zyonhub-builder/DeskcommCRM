@@ -54,6 +54,7 @@ import {
 } from "@/lib/channels";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { logger } from "@/lib/logger";
+import { enviarAlertaDeInstancia } from "@/lib/platform/instance-alerts";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 
@@ -66,6 +67,7 @@ type LinhaDeSessao = ChannelSessionRef & {
   id: string;
   organization_id: string;
   status: string | null;
+  status_reason: string | null;
   display_name: string | null;
   phone_number: string | null;
   archived_at: string | null;
@@ -86,7 +88,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("channel_sessions")
     .select(
-      `id, organization_id, status, display_name, phone_number, archived_at, ${CHANNEL_SESSION_REF_COLUMNS}`,
+      `id, organization_id, status, status_reason, display_name, phone_number, archived_at, ${CHANNEL_SESSION_REF_COLUMNS}`,
     )
     .is("archived_at", null)
     .limit(LIMITE);
@@ -142,12 +144,18 @@ async function handle(req: NextRequest): Promise<Response> {
       // gravar por cima com um erro de rede transitório trocaria informação boa
       // por ruído, e é o mesmo cuidado que a tela de conexões já toma.
       let statusFinal = s.status;
+      const agora = new Date().toISOString();
       if (saude.reachable && saude.status && saude.status !== s.status) {
         statusFinal = saude.status;
-        const agora = new Date().toISOString();
         await admin
           .from("channel_sessions")
-          .update({ status: saude.status, last_status_change_at: agora })
+          .update({ status: saude.status, last_status_change_at: agora, last_health_check_at: agora })
+          .eq("id", s.id)
+          .eq("organization_id", s.organization_id);
+      } else {
+        await admin
+          .from("channel_sessions")
+          .update({ last_health_check_at: agora })
           .eq("id", s.id)
           .eq("organization_id", s.organization_id);
       }
@@ -160,6 +168,28 @@ async function handle(req: NextRequest): Promise<Response> {
         apelido,
       );
       desfechos[desfecho] = (desfechos[desfecho] ?? 0) + 1;
+
+      if (desfecho === "avisado" || desfecho === "resolvido") {
+        try {
+          await enviarAlertaDeInstancia(admin, {
+            eventKind: desfecho === "avisado" ? "down" : "recovered",
+            affectedOrganizationId: s.organization_id,
+            affectedChannelSessionId: s.id,
+            status: saude.status ?? (saude.reachable ? statusFinal : "UNREACHABLE"),
+            statusReason: saude.detail ?? s.status_reason,
+            displayName: apelido,
+            phoneNumber: s.phone_number,
+            observedAt: new Date(agora),
+            requestId,
+          });
+        } catch (err) {
+          logger.warn("[channel-health] aviso global de instância falhou", {
+            sessionId: s.id,
+            detail: err instanceof Error ? err.message : "erro",
+            requestId,
+          });
+        }
+      }
     } catch (err) {
       // Uma sessão problemática não derruba o lote — as outras ainda precisam
       // ser vigiadas, e é justamente numa rodada assim que alguma pode ter caído.

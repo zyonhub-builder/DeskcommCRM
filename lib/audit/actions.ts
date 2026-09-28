@@ -422,6 +422,10 @@ export const AUDIT_ACTIONS = [
   // veem, e a pergunta "quem repintou isto?" só tem resposta aqui: não há
   // event_log (nenhum handler consumiria o tipo — ver register-handlers.ts).
   "platform_branding.updated",
+  // Avisos globais de instância desconectada: mutação da INSTALAÇÃO, sem
+  // `organization_id`. O destino completo nunca entra no metadata — só máscara.
+  "platform.instance_alert_settings_updated",
+  "platform.instance_alert_test_sent",
   // A política de cadastro da INSTALAÇÃO trocada em `platform_settings`
   // (migration 0233) — mutação de plataforma, sem `organization_id`. Auditável
   // porque decide quem consegue ENTRAR no sistema inteiro, e "por que ninguém
