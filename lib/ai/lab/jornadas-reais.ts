@@ -6,8 +6,14 @@ import { z } from "zod";
 
 import { DEFAULT_CLASSIFIER_MODEL, gatewayConfig, gatewayHeaders } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
+import { nomeDoCanal } from "@/lib/channels/estado";
+import {
+  COLUNAS_CANAL_DO_LABORATORIO,
+  despacharMensagemClienteDoLaboratorio,
+  parseCanalDoLaboratorio,
+  type CanalDoLaboratorio,
+} from "@/lib/channels/laboratorio";
 import { resetarContatoDeTeste } from "@/lib/contacts/resetar-contato-de-teste";
-import { dispatchWahaEvent, type SessionStatusRow, type WahaEnvelope } from "@/lib/waha/ingest";
 import { ZAPSIGN_DOCUMENT_ENTITY_KIND, ZAPSIGN_DOCUMENT_SIGNED_EVENT } from "@/lib/zapsign/events";
 import { ZAPSIGN_PROVIDER } from "@/lib/zapsign/service";
 
@@ -140,15 +146,6 @@ export interface AgenteDoLaboratorio {
   is_active: boolean;
   paused_at: string | null;
   published_version_id: string | null;
-}
-
-interface CanalDaRodada {
-  id: string;
-  organization_id: string;
-  waha_session_name: string | null;
-  is_warmup_complete: boolean | null;
-  warmup_started_at: string | null;
-  status: string | null;
 }
 
 interface LinhaMensagem {
@@ -344,10 +341,6 @@ function parseAgente(row: Record<string, unknown>): AgenteDoLaboratorio {
   };
 }
 
-function chatIdDoTelefone(phoneNumber: string): string {
-  return `${phoneNumber.replace(/^\+/, "")}@c.us`;
-}
-
 function externalIdDaMensagem(runId: string, stepIndex: number): string {
   return `lab_${runId.replace(/-/g, "")}_${stepIndex}`;
 }
@@ -414,7 +407,7 @@ export async function listarLaboratorioDeJornadas(
       .limit(25),
     db
       .from("channel_sessions")
-      .select("id,display_name,status,phone_number,waha_session_name,provider")
+      .select("id,display_name,status,phone_number")
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("created_at", { ascending: false }),
@@ -438,37 +431,11 @@ export async function listarLaboratorioDeJornadas(
     agents: linhas(agents).map(parseAgente),
     channels: linhas(channels).map((c) => ({
       id: String(c.id),
-      label: rotuloDoCanal(c),
+      label: nomeDoCanal(c),
       status: typeof c.status === "string" ? c.status : null,
       phone_number: typeof c.phone_number === "string" ? c.phone_number : null,
     })),
   };
-}
-
-function textoDaLinha(row: Record<string, unknown>, key: string): string | null {
-  const value = row[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function rotuloDoCanal(row: Record<string, unknown>): string {
-  const displayName = textoDaLinha(row, "display_name");
-  if (displayName) return displayName;
-
-  const provider = textoDaLinha(row, "provider");
-  const providerLabel: Record<string, string> = {
-    datafy: "Datafy",
-    meta_cloud: "WhatsApp Oficial",
-    wacalls: "Chamadas WhatsApp",
-    waha: "WhatsApp",
-    zernio: "Zernio",
-    zernio_social: "Zernio Social",
-  };
-  if (provider && providerLabel[provider]) return providerLabel[provider];
-
-  const sessionName = textoDaLinha(row, "waha_session_name");
-  if (sessionName) return sessionName;
-
-  return "Canal sem nome";
 }
 
 export async function salvarCenarioDaJornada(
@@ -598,18 +565,18 @@ export async function iniciarRodadaDaJornada(
 async function carregarCanalDaRodada(
   client: AnyClient,
   run: RodadaDaJornada,
-): Promise<CanalDaRodada> {
+): Promise<CanalDoLaboratorio> {
   if (!run.channel_session_id) throw new Error("cenario_sem_canal");
   const { data, error } = await client
     .from("channel_sessions")
-    .select("id,organization_id,waha_session_name,is_warmup_complete,warmup_started_at,status")
+    .select(COLUNAS_CANAL_DO_LABORATORIO)
     .eq("organization_id", run.organization_id)
     .eq("id", run.channel_session_id)
     .is("archived_at", null)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("canal_nao_encontrado");
-  return data as CanalDaRodada;
+  return parseCanalDoLaboratorio(linha(data) ?? {});
 }
 
 async function marcarRodadaComoFalha(
@@ -675,35 +642,18 @@ export async function enviarProximoPassoDaRodada(
   try {
     const channel = await carregarCanalDaRodada(db, run);
     const externalId = externalIdDaMensagem(run.id, run.current_step_index);
-    const envelope: WahaEnvelope = {
-      event: "message",
-      session: channel.waha_session_name ?? `lab-${channel.id}`,
-      payload: {
-        id: externalId,
-        from: chatIdDoTelefone(run.phone_number),
-        fromMe: false,
-        body: step.body,
-        type: "chat",
-        timestamp: Math.floor(now.getTime() / 1000),
-        _data: {
-          notifyName: run.contact_name ?? "Cliente de teste",
-          pushName: run.contact_name ?? "Cliente de teste",
-          deskcommLab: {
-            run_id: run.id,
-            execution_mode: run.execution_mode,
-            agent_id: run.agent_id,
-            step_index: run.current_step_index,
-          },
-        },
-      },
-    };
-
-    await dispatchWahaEvent(
-      db,
-      channel as SessionStatusRow,
-      envelope,
-      `lab-${run.id}-${run.current_step_index}`,
-    );
+    await despacharMensagemClienteDoLaboratorio(db, channel, {
+      externalId,
+      phoneNumber: run.phone_number,
+      body: step.body,
+      contactName: run.contact_name,
+      now,
+      requestId: `lab-${run.id}-${run.current_step_index}`,
+      runId: run.id,
+      executionMode: run.execution_mode,
+      agentId: run.agent_id,
+      stepIndex: run.current_step_index,
+    });
     const { data: message } = await db
       .from("messages")
       .select("id,contact_id,conversation_id")

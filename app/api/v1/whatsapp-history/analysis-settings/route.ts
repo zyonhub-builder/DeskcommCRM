@@ -5,7 +5,7 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { roleAtLeast } from "@/lib/auth/types";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -53,7 +53,7 @@ export async function GET(): Promise<Response> {
     return ok(
       payloadFromSettings(
         data?.settings as Record<string, unknown> | null,
-        ROLE_RANK[authz.org.role] >= ROLE_RANK.admin,
+        roleAtLeast(authz.org.role, "admin"),
       ),
       {
         requestId,

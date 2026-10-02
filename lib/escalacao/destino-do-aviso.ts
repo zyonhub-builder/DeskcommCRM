@@ -35,7 +35,7 @@ export function destinoDeAvisoEhGrupo(bruto: string | null | undefined): boolean
  * Sem `@`, tratamos como telefone e mantemos a máscara universal do produto:
  * `+` na frente, dígitos atrás. Com `@`, tratamos como identificador de grupo e
  * só normalizamos espaços/caixa. Não tentamos converter link de convite em ID:
- * isso depende da WAHA resolver o convite para o grupo real.
+ * isso depende do adaptador de canal resolver o convite para o grupo real.
  */
 export function normalizarDestinoDeAviso(bruto: string): string {
   const aparado = bruto.trim();

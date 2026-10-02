@@ -31,7 +31,7 @@ import { type NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { roleAtLeast } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .maybeSingle();
 
   if (!version) return fail("not_found", t("Version não encontrada."), 404, { requestId });
-  if (version.status !== "published" && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+  if (version.status !== "published" && !roleAtLeast(activeOrg.role, "manager")) {
     return fail("forbidden_role", t("Esta versão ainda não está publicada."), 403, {
       requestId,
     });

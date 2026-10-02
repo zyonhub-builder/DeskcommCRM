@@ -145,8 +145,6 @@ describe("laboratório de jornadas reais", () => {
           display_name: "Talismã WhatsApp",
           status: "WORKING",
           phone_number: "+551151770706",
-          waha_session_name: "talismã-dev",
-          provider: "waha",
         },
       ],
       ai_agents: [
@@ -170,10 +168,9 @@ describe("laboratório de jornadas reais", () => {
       "22222222-2222-4222-8222-222222222222",
     );
 
-    expect(selects.get("channel_sessions")).toBe(
-      "id,display_name,status,phone_number,waha_session_name,provider",
-    );
+    expect(selects.get("channel_sessions")).toBe("id,display_name,status,phone_number");
     expect(selects.get("channel_sessions")).not.toContain("label");
+    expect(selects.get("channel_sessions")).not.toContain("provider");
     expect(selects.get("ai_agents")).toBe("id,name,is_active,paused_at,published_version_id");
     expect(result.channels).toEqual([
       {
