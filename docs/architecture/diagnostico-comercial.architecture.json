@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Diagnóstico comercial",
+    "subtitle": "separar origem, atendimento, funil e custo antes de culpar o lead ou o comercial",
+    "output": "diagnostico-comercial.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "dados", "label": "Dados operacionais" },
+    { "id": "api", "label": "API e regra" },
+    { "id": "ui", "label": "Tela" },
+    { "id": "decisao", "label": "Decisão humana" }
+  ],
+  "mainPath": ["rastreio", "rota", "agregacao", "tela", "gestor", "acoes"],
+  "nodes": [
+    {
+      "id": "rastreio",
+      "lane": "dados",
+      "col": 0,
+      "type": "table",
+      "label": "crm_leads.source_metadata + webhook_lead_captures",
+      "sublabel": "UTM/campanha quando a aquisição foi rastreada"
+    },
+    {
+      "id": "atendimento",
+      "lane": "dados",
+      "col": 0,
+      "type": "table",
+      "label": "messages + conversations",
+      "sublabel": "direção, autoria, tempos e handoff — sem ler body"
+    },
+    {
+      "id": "funil",
+      "lane": "dados",
+      "col": 0,
+      "type": "table",
+      "label": "crm_leads + crm_lead_activities",
+      "sublabel": "abertos, fechados, perdas e trabalho registrado"
+    },
+    {
+      "id": "custo",
+      "lane": "dados",
+      "col": 0,
+      "type": "table",
+      "label": "llm_calls",
+      "sublabel": "custo e latência de IA já registrados no período, incluindo análise sob demanda"
+    },
+    {
+      "id": "auditoria_analise",
+      "lane": "dados",
+      "col": 0,
+      "type": "table",
+      "label": "api_audit_log",
+      "sublabel": "quem gerou análise paga ou baixou PDF, janela e custo"
+    },
+    {
+      "id": "historico_analises",
+      "lane": "dados",
+      "col": 0,
+      "type": "table",
+      "label": "commercial_diagnosis_reports",
+      "sublabel": "relatórios salvos com janela, prompt, custo e payload — sem messages.body"
+    },
+    {
+      "id": "rota",
+      "lane": "api",
+      "col": 1,
+      "type": "route",
+      "label": "GET /api/v1/metrics/diagnostico-comercial",
+      "sublabel": "manager+ · service role com organization_id explícito"
+    },
+    {
+      "id": "rota_analise",
+      "lane": "api",
+      "col": 1,
+      "type": "route",
+      "label": "GET/POST /api/v1/metrics/diagnostico-comercial/analise",
+      "sublabel": "manager+ · lista histórico ou gera análise sob demanda"
+    },
+    {
+      "id": "rota_pdf",
+      "lane": "api",
+      "col": 1,
+      "type": "route",
+      "label": "POST /api/v1/metrics/diagnostico-comercial/analise/pdf",
+      "sublabel": "manager+ · usa report_id salvo ou payload legado"
+    },
+    {
+      "id": "agregacao",
+      "lane": "api",
+      "col": 2,
+      "type": "lib",
+      "label": "lib/metrics/diagnostico-comercial.ts",
+      "sublabel": "heurísticas testadas, custo da tela = 0, limite declarado"
+    },
+    {
+      "id": "prompt_analise",
+      "lane": "api",
+      "col": 2,
+      "type": "lib",
+      "label": "lib/metrics/diagnostico-comercial-ai.ts",
+      "sublabel": "prompt JSON, parser Zod e régua sem messages.body"
+    },
+    {
+      "id": "seam_ia",
+      "lane": "api",
+      "col": 3,
+      "type": "service",
+      "label": "runModelCall",
+      "sublabel": "usa binding da organização, orçamento e grava llm_calls"
+    },
+    {
+      "id": "hook",
+      "lane": "ui",
+      "col": 3,
+      "type": "frontend",
+      "label": "useDiagnosticoComercial",
+      "sublabel": "7/30/90 dias, leitura cacheada por período"
+    },
+    {
+      "id": "tela",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "/app/analise/diagnostico-comercial",
+      "sublabel": "sinais, origem, atendimento, perdas, atividades e custo"
+    },
+    {
+      "id": "hub",
+      "lane": "ui",
+      "col": 3,
+      "type": "frontend",
+      "label": "Hub Análise",
+      "sublabel": "porta no NAV_CATALOG; não fica escondida por URL"
+    },
+    {
+      "id": "gestor",
+      "lane": "decisao",
+      "col": 5,
+      "type": "human",
+      "label": "Gestor / agência",
+      "sublabel": "decide se o gap é aquisição, comercial, operação ou falta de dado"
+    },
+    {
+      "id": "acoes",
+      "lane": "decisao",
+      "col": 6,
+      "type": "process",
+      "label": "Próximos passos",
+      "sublabel": "ajustar UTM, auditar fila, treinar comercial ou separar amostra para IA semântica"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "rastreio", "to": "rota", "label": "leads criados e capturas" },
+    {
+      "id": "e2",
+      "from": "atendimento",
+      "to": "rota",
+      "label": "metadados de conversa e mensagem"
+    },
+    { "id": "e3", "from": "funil", "to": "rota", "label": "status, perdas e atividades" },
+    { "id": "e4", "from": "custo", "to": "rota", "label": "custo de IA registrado" },
+    { "id": "e5", "from": "rota", "to": "agregacao", "label": "linhas filtradas por organização" },
+    { "id": "e6", "from": "agregacao", "to": "rota", "label": "payload com régua e sinais" },
+    { "id": "e7", "from": "rota", "to": "hook", "label": "API success" },
+    { "id": "e8", "from": "hook", "to": "tela", "label": "estado de loading/erro/dados" },
+    { "id": "e9", "from": "hub", "to": "tela", "label": "porta de navegação" },
+    {
+      "id": "e10",
+      "from": "tela",
+      "to": "gestor",
+      "label": "sinais acionáveis e o que não foi medido"
+    },
+    { "id": "e11", "from": "gestor", "to": "acoes", "label": "decisão de próximo passo" },
+    {
+      "id": "e12",
+      "from": "acoes",
+      "to": "rastreio",
+      "label": "corrigir UTMs melhora a próxima leitura"
+    },
+    {
+      "id": "e13",
+      "from": "acoes",
+      "to": "funil",
+      "label": "treino/follow-up muda atividades e desfechos"
+    },
+    {
+      "id": "e14",
+      "from": "acoes",
+      "to": "atendimento",
+      "label": "auditoria de fila muda tempos e respostas"
+    },
+    {
+      "id": "e15",
+      "from": "acoes",
+      "to": "custo",
+      "label": "análise sob demanda entra como finalidade de IA medida"
+    },
+    {
+      "id": "e16",
+      "from": "tela",
+      "to": "rota_analise",
+      "label": "botão Gerar análise com IA"
+    },
+    {
+      "id": "e17",
+      "from": "rota_analise",
+      "to": "agregacao",
+      "label": "recalcula a mesma janela no servidor"
+    },
+    {
+      "id": "e18",
+      "from": "agregacao",
+      "to": "prompt_analise",
+      "label": "payload agregado sem corpo de mensagem"
+    },
+    {
+      "id": "e19",
+      "from": "prompt_analise",
+      "to": "seam_ia",
+      "label": "prompt JSON e schema esperado"
+    },
+    {
+      "id": "e20",
+      "from": "seam_ia",
+      "to": "custo",
+      "label": "llm_calls purpose=commercial_diagnosis_analysis"
+    },
+    {
+      "id": "e21",
+      "from": "seam_ia",
+      "to": "rota_analise",
+      "label": "texto, tokens, latência e custo"
+    },
+    {
+      "id": "e22",
+      "from": "rota_analise",
+      "to": "tela",
+      "label": "interpretação executiva e custo desta chamada"
+    },
+    {
+      "id": "e23",
+      "from": "rota_analise",
+      "to": "auditoria_analise",
+      "label": "audit metrics.diagnostico_comercial_ai_generated"
+    },
+    {
+      "id": "e24",
+      "from": "auditoria_analise",
+      "to": "gestor",
+      "label": "rastro consultável de quem pediu a análise"
+    },
+    {
+      "id": "e25",
+      "from": "rota_analise",
+      "to": "historico_analises",
+      "label": "salva análise, prompt, custo e janela"
+    },
+    {
+      "id": "e26",
+      "from": "historico_analises",
+      "to": "rota_analise",
+      "label": "últimos relatórios por organização"
+    },
+    {
+      "id": "e27",
+      "from": "historico_analises",
+      "to": "tela",
+      "label": "histórico reabrível"
+    },
+    {
+      "id": "e28",
+      "from": "tela",
+      "to": "rota_pdf",
+      "label": "baixar PDF da análise aberta ou salva"
+    },
+    {
+      "id": "e29",
+      "from": "rota_pdf",
+      "to": "historico_analises",
+      "label": "carrega report_id filtrado por organização"
+    },
+    {
+      "id": "e30",
+      "from": "rota_pdf",
+      "to": "auditoria_analise",
+      "label": "audit metrics.diagnostico_comercial_pdf_downloaded"
+    },
+    {
+      "id": "e31",
+      "from": "rota_pdf",
+      "to": "tela",
+      "label": "arquivo PDF sem nova chamada de IA"
+    }
+  ],
+  "cards": [
+    {
+      "titulo": "Por que começa sem IA",
+      "texto": "Abrir a tela não chama modelo. A leitura objetiva usa metadados e agregados para responder o que já é mensurável: origem, velocidade, funil, autoria, atividade e custo. A interpretação com IA só roda sob demanda, mostra o custo da chamada e fica salva para reabrir ou baixar PDF sem custo novo."
+    },
+    {
+      "titulo": "Privacidade da análise",
+      "texto": "Tanto a leitura objetiva quanto a análise com IA não selecionam `messages.body`. A IA recebe apenas o payload agregado do diagnóstico; qualidade semântica do texto da conversa continua declarada como não medida."
+    }
+  ]
+}

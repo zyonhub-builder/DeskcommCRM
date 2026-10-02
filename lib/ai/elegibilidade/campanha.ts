@@ -110,3 +110,52 @@ export function lerCampanhas(settings: unknown): CampanhaWhatsapp[] {
       : undefined;
   return parseCampanhas(raw);
 }
+
+function objetoSettings(settings: unknown): Record<string, unknown> {
+  return settings !== null && typeof settings === "object" && !Array.isArray(settings)
+    ? { ...(settings as Record<string, unknown>) }
+    : {};
+}
+
+export function frasesDaCampanhaDoCanal(settings: unknown, channelSessionId: string): string[] {
+  const vistas = new Set<string>();
+  const frases: string[] = [];
+  for (const campanha of lerCampanhas(settings)) {
+    if (campanha.channel_session_id !== channelSessionId) continue;
+    const chave = normalizarParaMatch(campanha.match.valor);
+    if (chave === "" || vistas.has(chave)) continue;
+    vistas.add(chave);
+    frases.push(campanha.match.valor);
+  }
+  return frases;
+}
+
+export function substituirFrasesDaCampanhaDoCanal(
+  settings: unknown,
+  channelSessionId: string,
+  frases: readonly string[],
+): Record<string, unknown> {
+  const base = objetoSettings(settings);
+  const restantes = lerCampanhas(base).filter(
+    (campanha) => campanha.channel_session_id !== channelSessionId,
+  );
+  const vistas = new Set<string>();
+  const prefixo = channelSessionId.replace(/-/g, "").slice(0, 12);
+  const novas: CampanhaWhatsapp[] = [];
+
+  for (const frase of frases) {
+    const limpa = frase.replace(/\s+/g, " ").trim();
+    const chave = normalizarParaMatch(limpa);
+    if (limpa.length < 3 || limpa.length > 400 || chave === "" || vistas.has(chave)) continue;
+    vistas.add(chave);
+    novas.push({
+      id: `canal-${prefixo}-${novas.length + 1}`,
+      label: `Frase ${novas.length + 1}`,
+      match: { tipo: "starts_with", valor: limpa },
+      channel_session_id: channelSessionId,
+    });
+    if (novas.length >= 50) break;
+  }
+
+  return { ...base, campanhas_whatsapp: [...restantes, ...novas] };
+}

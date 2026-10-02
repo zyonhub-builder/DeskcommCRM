@@ -3,7 +3,7 @@
  *
  * ## Por que esta regra é um módulo e não um punhado de `if` na tela
  *
- * O aviso de caso falha de um jeito MUDO. A pessoa escolhe um número, liga o
+ * O aviso de caso falha de um jeito MUDO. A pessoa escolhe um destino, liga o
  * switch, a tela fica verde — e nenhuma mensagem chega, porque a conexão
  * escolhida é um canal oficial (só manda modelo aprovado), ou porque nenhum
  * agente publicado tem "abrir casos" ligado, ou porque esta instalação ainda
@@ -41,6 +41,8 @@
  * tela AFIRMA.
  */
 
+import { destinoDeAvisoValido, normalizarDestinoDeAviso } from "@/lib/escalacao/destino-do-aviso";
+
 /**
  * Os onze estados. Tupla e não união solta: `satisfies` e varredura precisam de
  * um valor em runtime, e um código novo sem frase para de compilar na tela.
@@ -59,16 +61,6 @@ export const CODIGOS_DO_ESTADO_DO_AVISO = [
   "descarte_acontecendo",
 ] as const;
 export type CodigoDoEstadoDoAviso = (typeof CODIGOS_DO_ESTADO_DO_AVISO)[number];
-
-/**
- * A MESMA forma do CHECK `config_aviso_de_caso_e164` (migration 0292).
- *
- * Copiada de propósito, e a cópia está declarada: o CHECK mora no banco e o
- * campo mora no navegador. Sem a validação daqui, o erro só apareceria depois
- * de a pessoa preencher a tela inteira e apertar salvar, como
- * `aviso_de_caso_telefone_invalido` — um código cru vindo do Postgres.
- */
-const E164 = /^\+[1-9][0-9]{7,14}$/;
 
 /** Quantos dias de recência fazem o descarte valer uma frase na tela. */
 export const JANELA_DO_DESCARTE_DIAS = 7;
@@ -142,7 +134,7 @@ export interface AvisoDaTela {
 
 /** `true` quando este texto passaria pelo CHECK do banco. */
 export function telefoneDeAvisoValido(bruto: string | null | undefined): boolean {
-  return typeof bruto === "string" && E164.test(bruto.trim());
+  return destinoDeAvisoValido(bruto);
 }
 
 /**
@@ -158,8 +150,7 @@ export function telefoneDeAvisoValido(bruto: string | null | undefined): boolean
  * e diria à pessoa que ela digitou algo errado quando ela não digitou nada.
  */
 export function normalizarTelefoneDeAviso(bruto: string): string {
-  const digitos = bruto.replace(/\D/g, "");
-  return digitos === "" ? "" : `+${digitos}`;
+  return normalizarDestinoDeAviso(bruto);
 }
 
 /** A conexão escolhida, quando ela ainda existe na lista. */
@@ -170,7 +161,7 @@ function conexaoEscolhida(f: FatosDaTelaDeAviso): ConexaoParaAviso | null {
 }
 
 /**
- * As três condições do switch: uma conexão que MANDA o aviso, um número que o
+ * As três condições do switch: uma conexão que MANDA o aviso, um destino que o
  * RECEBE e um endereço público para o link abrir.
  *
  * Elas são as mesmas três que o motor checa nos passos 8, 9 e 12 — travar aqui

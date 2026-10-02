@@ -54,6 +54,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { destinoDeAvisoEhGrupo, mascararDestinoDoAviso } from "@/lib/escalacao/destino-do-aviso";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
@@ -246,8 +247,7 @@ export interface TransporteDoAviso {
 }
 
 export type DecisaoDePacing =
-  | { liberado: true }
-  | { liberado: false; motivo: "espacamento" | "teto_diario"; liberaEm: Date };
+  { liberado: true } | { liberado: false; motivo: "espacamento" | "teto_diario"; liberaEm: Date };
 
 export interface PacingDoAviso {
   decide(orgId: string, channelSessionId: string, agora: Date): Promise<DecisaoDePacing>;
@@ -319,10 +319,7 @@ function fraseDoErro(codigo: ErroDaEntregaDeAviso): string {
  * dispensá-lo, e o mais barato vem primeiro. O caminho de TODA instalação que
  * nunca ligou o aviso termina no passo 2, com duas leituras e zero rede.
  */
-export async function aplicaAvisoDeCaso(
-  deps: AvisoDeps,
-  row: EventRow,
-): Promise<DesfechoDoAviso> {
+export async function aplicaAvisoDeCaso(deps: AvisoDeps, row: EventRow): Promise<DesfechoDoAviso> {
   const agora = deps.clock();
   const orgId = row.organization_id;
   const caseId = textoOuNulo(row.payload.case_id);
@@ -427,7 +424,10 @@ export async function aplicaAvisoDeCaso(
     if (tentativas >= TETO_DE_TENTATIVAS_DO_CANAL) {
       return await condena(deps, orgId, caso, entrega, "canal_desconectado", canal.status, agora);
     }
-    await deps.db.atualizaEntrega(orgId, entrega.id, { tentativas, erro_codigo: "canal_desconectado" });
+    await deps.db.atualizaEntrega(orgId, entrega.id, {
+      tentativas,
+      erro_codigo: "canal_desconectado",
+    });
     return retry(new Date(agora.getTime() + ADIAMENTO_DO_CANAL_MS), `canal ${canal.status}`);
   }
 
@@ -441,7 +441,10 @@ export async function aplicaAvisoDeCaso(
     if (tentativas >= TETO_DE_TENTATIVAS_DE_ENVIO) {
       return await condena(deps, orgId, caso, entrega, "transporte_ausente", null, agora);
     }
-    await deps.db.atualizaEntrega(orgId, entrega.id, { tentativas, erro_codigo: "transporte_ausente" });
+    await deps.db.atualizaEntrega(orgId, entrega.id, {
+      tentativas,
+      erro_codigo: "transporte_ausente",
+    });
     return retry(new Date(agora.getTime() + ADIAMENTO_DO_CANAL_MS), "transporte fora do ar");
   }
 
@@ -472,16 +475,11 @@ export async function aplicaAvisoDeCaso(
   // volta (canal oficial, pareamento do onboarding, conclusão do pareamento
   // por QR) em vez de uma guarda por caminho — a próxima forma de reativar
   // nasceria sem ela.
-  if (await deps.db.destinoEhDaPropriaOrganizacao(orgId, cfg.telefone_destino)) {
-    return await condena(
-      deps,
-      orgId,
-      caso,
-      entrega,
-      "destino_da_propria_organizacao",
-      null,
-      agora,
-    );
+  if (
+    !destinoDeAvisoEhGrupo(cfg.telefone_destino) &&
+    (await deps.db.destinoEhDaPropriaOrganizacao(orgId, cfg.telefone_destino))
+  ) {
+    return await condena(deps, orgId, caso, entrega, "destino_da_propria_organizacao", null, agora);
   }
 
   // ── 12. O destino ────────────────────────────────────────────────────────
@@ -606,8 +604,7 @@ async function depoisDoEnvio(
 
 /** Os quatro últimos dígitos, e só. */
 export function mascara(telefone: string): string {
-  const d = telefone.replace(/\D/g, "");
-  return d.length <= 4 ? "••••" : `••••${d.slice(-4)}`;
+  return mascararDestinoDoAviso(telefone);
 }
 
 /**
@@ -695,7 +692,9 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
     async carregaCaso(orgId, caseId) {
       const { data, error } = await admin
         .from("agent_cases")
-        .select("id, organization_id, conversation_id, kind, source, status, title, summary, blocker")
+        .select(
+          "id, organization_id, conversation_id, kind, source, status, title, summary, blocker",
+        )
         .eq("organization_id", orgId)
         .eq("id", caseId)
         .maybeSingle();
@@ -777,7 +776,12 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
         .maybeSingle();
       if (error) throw new Error(error.message);
       if (!data) return null;
-      const linha = data as { id: string; status: string; archived_at: string | null; provider: string | null };
+      const linha = data as {
+        id: string;
+        status: string;
+        archived_at: string | null;
+        provider: string | null;
+      };
       // A capacidade é resolvida em `lib/channels/` — este módulo nunca conhece
       // provedor. O import é TARDIO pelo mesmo motivo que `urlPublica` chega
       // pronta: o topo deste arquivo tem de carregar sem ambiente.
@@ -870,10 +874,13 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
     },
 
     async registraJidDoAviso(orgId, jid) {
-      const { error } = await admin.rpc("fn_registrar_jid_do_aviso" as never, {
-        p_org: orgId,
-        p_jid: jid,
-      } as never);
+      const { error } = await admin.rpc(
+        "fn_registrar_jid_do_aviso" as never,
+        {
+          p_org: orgId,
+          p_jid: jid,
+        } as never,
+      );
       if (error) throw new Error(error.message);
     },
 

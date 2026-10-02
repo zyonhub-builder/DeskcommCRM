@@ -149,8 +149,8 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
   const [confirmarContato, setConfirmarContato] = useState<string | null>(null);
 
   const oferecidas = estado.conexoes.filter((c) => c.aceitaMensagemLivre);
-  const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
-  const podeSalvar = rascunho.canal !== "" && telefoneOk && !salvar.isPending;
+  const destinoOk = telefoneDeAvisoValido(rascunho.telefone);
+  const podeSalvar = rascunho.canal !== "" && destinoOk && !salvar.isPending;
   /**
    * O switch, e por que ele NÃO é `estado.pode_ligar` sozinho nem um `||` com o
    * rascunho.
@@ -163,11 +163,11 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
    * exatamente o que o estado bloqueante existe para impedir.
    *
    * Então: o veto do servidor (endereço público) vale SEMPRE, e sobre ele o
-   * rascunho precisa ter uma conexão que serve e um número completo.
+   * rascunho precisa ter uma conexão que serve e um destino completo.
    */
   const semEnderecoPublico = estado.avisos.some((a) => a.codigo === "sem_endereco_publico");
   const canalServe = oferecidas.some((c) => c.id === rascunho.canal);
-  const podeLigar = !semEnderecoPublico && canalServe && telefoneOk;
+  const podeLigar = !semEnderecoPublico && canalServe && destinoOk;
   const jaSalvo = Boolean(estado.config?.channel_session_id);
 
   async function enviar(confirma: boolean) {
@@ -198,7 +198,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
     try {
       const r = await testar.mutateAsync();
       if (r.enviado) {
-        toast.success(t("Aviso de teste enviado. Confira o WhatsApp desse número."));
+        toast.success(t("Aviso de teste enviado. Confira o WhatsApp desse destino."));
         return;
       }
       const codigo = r.codigo;
@@ -242,30 +242,32 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="telefone">{t("Número que recebe os avisos")}</Label>
+        <Label htmlFor="telefone">{t("Destino que recebe os avisos")}</Label>
         <Input
           id="telefone"
-          inputMode="tel"
-          className="w-full sm:w-72"
-          placeholder="+5531999998888"
+          inputMode="text"
+          className="w-full sm:w-96"
+          placeholder="+5531999998888 ou 120363000000000000@g.us"
           value={rascunho.telefone}
           onChange={(e) =>
             setRascunho((r) => ({ ...r, telefone: normalizarTelefoneDeAviso(e.target.value) }))
           }
-          aria-invalid={rascunho.telefone !== "" && !telefoneOk}
+          aria-invalid={rascunho.telefone !== "" && !destinoOk}
         />
         <p className="text-xs text-muted-foreground">
-          {t("Comece pelo código do país. Um celular do Brasil fica assim: +55, DDD e o número.")}
+          {t(
+            "Use um telefone com código do país ou o ID do grupo terminado em @g.us. Um celular do Brasil fica assim: +55, DDD e número.",
+          )}
         </p>
-        {rascunho.telefone !== "" && !telefoneOk ? (
+        {rascunho.telefone !== "" && !destinoOk ? (
           <p className="text-xs text-destructive" data-testid="telefone-invalido">
-            {t("Esse número ainda não está completo.")}
+            {t("Informe um telefone com +DDI ou um ID de grupo terminado em @g.us.")}
           </p>
         ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="rotulo">{t("Como chamar esse número (opcional)")}</Label>
+        <Label htmlFor="rotulo">{t("Como chamar esse destino (opcional)")}</Label>
         <Input
           id="rotulo"
           className="w-full sm:w-72"
@@ -339,7 +341,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {t(
-          "O teste manda uma mensagem de verdade e conta no limite diário desse número. Salve antes de testar.",
+          "O teste manda uma mensagem de verdade e conta no limite diário do número que envia. Salve antes de testar.",
         )}
       </p>
     </Card>

@@ -6,8 +6,8 @@
  *
  * `fn_definir_aviso_de_caso` faz, dentro da MESMA transação da escrita, sete
  * guardas que uma rota faria em sete idas ao banco com uma janela de corrida
- * entre cada duas: papel, suporte, MFA, E.164, canal da organização, recusa do
- * número da própria organização e recusa de número que já é um cliente. Um
+ * entre cada duas: papel, suporte, MFA, destino válido, canal da organização,
+ * recusa do número da própria organização e recusa de número que já é um cliente. Um
  * `upsert` daqui repetiria as sete e divergiria delas no primeiro dia em que
  * alguém mudasse uma.
  *
@@ -48,6 +48,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { env } from "@/lib/env";
+import { destinoDeAvisoValido, normalizarDestinoDeAviso } from "@/lib/escalacao/destino-do-aviso";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { lerEstadoDaTelaDeAviso } from "@/lib/escalacao/tela-do-aviso";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -61,17 +62,15 @@ export const dynamic = "force-dynamic";
  * O corpo. `strict()` porque um campo a mais aqui é sempre engano: quem manda
  * `ligado` junto de `on` está falando com uma versão da API que não existe.
  *
- * `telefone` valida a MESMA forma do CHECK `config_aviso_de_caso_e164`. A
+ * `telefone` é nome legado do contrato, mas agora significa destino do aviso:
+ * telefone E.164 ou JID de grupo. Valida a MESMA forma do CHECK do banco. A
  * duplicação está declarada: sem ela, o erro só apareceria como
  * `aviso_de_caso_telefone_invalido` cru vindo do Postgres.
  */
 const corpo = z
   .object({
     channel_session_id: z.string().uuid(),
-    telefone: z
-      .string()
-      .trim()
-      .regex(/^\+[1-9][0-9]{7,14}$/),
+    telefone: z.string().trim().transform(normalizarDestinoDeAviso).refine(destinoDeAvisoValido),
     rotulo: z.string().trim().max(60).nullable().optional(),
     ligado: z.boolean(),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
@@ -100,7 +99,8 @@ const RECUSAS_DO_RPC = {
   aviso_de_caso_telefone_invalido: {
     code: "validation_failed",
     status: 422 as const,
-    frase: "Esse número não é válido. Use o código do país, por exemplo +55 31 99999-8888.",
+    frase:
+      "Esse destino não é válido. Use um telefone com código do país ou o ID do grupo terminado em @g.us.",
   },
   aviso_de_caso_canal_invalido: {
     code: "aviso_canal_invalido",

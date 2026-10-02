@@ -35,12 +35,26 @@ const numeroDeTesteSchema = z.string().transform((valor, ctx) => {
 /** Contrato da tela: ela substitui a configuração inteira numa gravação. */
 export const aiAccessUpdateSchema = z
   .object({
-    mode: z.enum(["open", "pre_go_live"]),
+    mode: z.enum(AI_ACCESS_MODES),
     test_phone_numbers: z.array(numeroDeTesteSchema),
+    campaign_phrases: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(3)
+          .max(400)
+          .transform((valor) => valor.replace(/\s+/g, " ")),
+      )
+      .max(50)
+      .default([]),
   })
   .transform((valor) => ({
     ...valor,
     test_phone_numbers: [...new Set(valor.test_phone_numbers)],
+    campaign_phrases: [
+      ...new Map(valor.campaign_phrases.map((frase) => [frase.toLowerCase(), frase])).values(),
+    ],
   }));
 
 export type AiAccessUpdate = z.output<typeof aiAccessUpdateSchema>;

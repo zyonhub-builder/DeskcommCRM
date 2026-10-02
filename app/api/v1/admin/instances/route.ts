@@ -22,6 +22,7 @@ import {
   type TipoDeDestinoDoAvisoDeInstancia,
   type TipoDeEventoDoAvisoDeInstancia,
 } from "@/lib/platform/instance-alerts";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -134,6 +135,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   } catch {
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
 
   const parsed = updateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

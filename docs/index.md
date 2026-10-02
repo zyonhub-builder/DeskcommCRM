@@ -10,14 +10,13 @@ audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-27)
 
 # Índice da documentação — DeskcommCRM
 
-Mapa dos **154** arquivos `.md` de `docs/`, espalhados por **20** subpastas — medido em
-2026-08-14, com as réguas ao lado: `git ls-files 'docs/**/*.md' | wc -l` e
-`git ls-files 'docs/**/*.md' | sed 's|^docs/||;s|/.*||' | sort -u | wc -l`. Os dois números
-estavam errados (149 e 24) e a segunda régua nem existia — é a mesma classe que
-[`audits/2026-08-14-afirmacoes-de-estado.md`](audits/2026-08-14-afirmacoes-de-estado.md)
-cataloga. Existe porque a documentação cresceu sem ponto
-de entrada: sem este índice, humano e agente não acham o que já foi decidido e
-reescrevem por cima.
+Mapa dos arquivos `.md` de `docs/`. Não há contagem fixa aqui porque ela apodrece:
+meça no checkout atual com `git ls-files 'docs/**/*.md' | wc -l` e conte as
+subpastas com `git ls-files 'docs/**/*.md' | sed 's|^docs/||;s|/.*||' | sort -u | wc -l`.
+Esse é o mesmo tipo de afirmação de estado catalogado em
+[`audits/2026-08-14-afirmacoes-de-estado.md`](audits/2026-08-14-afirmacoes-de-estado.md).
+Este índice existe porque a documentação cresceu sem ponto de entrada: sem ele,
+humano e agente não acham o que já foi decidido e reescrevem por cima.
 
 **Regra de precedência quando dois docs discordam:**
 `CLAUDE.md` (doutrina) > `docs/specs/` (contrato técnico) > `docs/prd/` (intenção) >
@@ -53,6 +52,7 @@ de menor precedência e registre.
 | [`prd/06-prd-nuvemshop-lgpd.md`](prd/06-prd-nuvemshop-lgpd.md) | Integração Nuvemshop + webhooks LGPD |
 | [`business-rules/00-business-rules-catalog.md`](business-rules/00-business-rules-catalog.md) | **Catálogo de regras de negócio** — fonte da verdade fora do código |
 | [`presentation/pitch-deck.md`](presentation/pitch-deck.md) | Pitch |
+| [`product/guia-funcionalidades.md`](product/guia-funcionalidades.md) | Guia de funcionalidades do app por necessidade, área, demonstração e tutorial |
 
 ## 3. Contrato técnico (specs)
 
@@ -132,6 +132,7 @@ acessibilidade).
 | [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) | Checklist de deploy |
 | [`ATUALIZANDO.md`](ATUALIZANDO.md) | `update.sh`, `restore.sh`, `healthcheck.sh` |
 | [`runbooks/deploy.md`](runbooks/deploy.md) | **Deploy em produção — os dois `-f` do compose, verificação pós-deploy** |
+| [`runbooks/canal-proprio-vps.md`](runbooks/canal-proprio-vps.md) | **Canal próprio de VPS** — upstream entra no DEV, releases do fork alimentam VPS de teste e produção |
 | [`runbooks/remediar-worker-congelado.md`](runbooks/remediar-worker-congelado.md) | **Incidente: o worker congelado** — diagnóstico (`diagnostico.sh`), impacto medido e as duas rotas de remediação. **Ainda não ensaiado** |
 | [`runbooks/ativar-packaging.md`](runbooks/ativar-packaging.md) | **Ativação da doutrina de packaging** — os 3 passos que não cabem num PR (pacote público, check obrigatório, primeira release) |
 | [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — como medir a origem do consumo, os dois intervalos da fila e as duas tabelas que só crescem |

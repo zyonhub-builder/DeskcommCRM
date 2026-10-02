@@ -39,6 +39,7 @@
  */
 import type { AvisoDb, CanalDoAviso, PacingDoAviso, TransporteDoAviso } from "./aviso-ao-suporte";
 import { mascara } from "./aviso-ao-suporte";
+import { destinoDeAvisoEhGrupo } from "./destino-do-aviso";
 import { montarAvisoDeTeste } from "./texto-do-aviso";
 import { urlPublicaUsavel } from "./url-publica";
 import type { ErroDaEntregaDeAviso } from "./vocabulario-do-aviso";
@@ -131,13 +132,15 @@ export async function enviarAvisoDeTeste(
   // Sem ela, depois de reativar a conexão cujo número é o destino, o teste
   // mandaria para um número da própria conta e apareceria verde enquanto o
   // aviso real é recusado — o desfecho que este módulo existe para evitar.
-  let destinoProprio: boolean;
-  try {
-    destinoProprio = await deps.db.destinoEhDaPropriaOrganizacao(orgId, telefone);
-  } catch {
-    return recusa("indeterminado");
+  if (!destinoDeAvisoEhGrupo(telefone)) {
+    let destinoProprio: boolean;
+    try {
+      destinoProprio = await deps.db.destinoEhDaPropriaOrganizacao(orgId, telefone);
+    } catch {
+      return recusa("indeterminado");
+    }
+    if (destinoProprio) return recusa("destino_da_propria_organizacao");
   }
-  if (destinoProprio) return recusa("destino_da_propria_organizacao");
 
   // ── 12. O destino ────────────────────────────────────────────────────────
   const to = await deps.transporte.resolveDestino(orgId, canal, telefone);

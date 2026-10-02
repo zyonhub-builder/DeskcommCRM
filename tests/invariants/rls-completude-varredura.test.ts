@@ -101,6 +101,13 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "por ACERTO ali.",
   },
   {
+    tabela: "commercial_diagnosis_reports",
+    razao:
+      "tests/invariants/commercial-diagnosis-reports-rls.test.ts prova " +
+      "manager lendo a própria organização, zero cross-tenant e agent lendo zero; " +
+      "fica fora de TABLES porque a policy direta exige manager+.",
+  },
+  {
     tabela: "meta_templates",
     razao:
       "tests/invariants/meta-templates-rls.test.ts (\"membro da org B NÃO vê " +

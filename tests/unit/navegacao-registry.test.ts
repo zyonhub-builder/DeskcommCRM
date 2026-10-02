@@ -65,6 +65,12 @@ describe("canSee", () => {
     expect(canSee(dest("/app/inbox"), VIEWER.platform, VIEWER.role)).toBe(true);
   });
 
+  it("portal de teste de agentes fica aberto para qualquer papel do tenant", () => {
+    const portal = dest("/app/ai/testes");
+    expect(portal.minRole).toBeUndefined();
+    expect(canSee(portal, VIEWER.platform, VIEWER.role)).toBe(true);
+  });
+
   it("platform admin vê tudo, inclusive sem org ativa", () => {
     for (const d of NAV_DESTINATIONS) expect(canSee(d, true, null)).toBe(true);
   });
@@ -137,9 +143,9 @@ describe("sidebarGroups", () => {
       // é profile do compose, não estado que o aplicativo conheça).
     ]);
     // E continua alcançável: o hub é a porta dela.
-    expect(
-      hubSections("crm", true, null).flatMap((s) => s.items.map((i) => i.href)),
-    ).toContain("/app/comandas");
+    expect(hubSections("crm", true, null).flatMap((s) => s.items.map((i) => i.href))).toContain(
+      "/app/comandas",
+    );
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
   });
 

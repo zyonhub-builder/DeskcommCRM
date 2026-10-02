@@ -25,8 +25,20 @@ describe("pré-go-live do canal", () => {
     const resultado = aiAccessUpdateSchema.parse({
       mode: "pre_go_live",
       test_phone_numbers: ["+55 (85) 98765-4321", "+5585987654321"],
+      campaign_phrases: ["Quero atendimento previdenciário", "Quero atendimento previdenciário"],
     });
     expect(resultado.test_phone_numbers).toEqual(["+5585987654321"]);
+    expect(resultado.campaign_phrases).toEqual(["Quero atendimento previdenciário"]);
+  });
+
+  it("aceita o modo restrito por origem/campanha", () => {
+    expect(
+      aiAccessUpdateSchema.parse({
+        mode: "allowlist",
+        test_phone_numbers: [],
+        campaign_phrases: ["Quero falar sobre aposentadoria - setembro"],
+      }),
+    ).toMatchObject({ mode: "allowlist" });
   });
 
   it("recusa texto que não identifica um telefone E.164", () => {
@@ -38,9 +50,9 @@ describe("pré-go-live do canal", () => {
   });
 
   it("lê metadata adulterada descartando somente os itens inválidos", () => {
-    expect(
-      lerNumerosDeTeste({ ai_test_phone_numbers: ["lixo", "+5511987654321", 42] }),
-    ).toEqual(["+5511987654321"]);
+    expect(lerNumerosDeTeste({ ai_test_phone_numbers: ["lixo", "+5511987654321", 42] })).toEqual([
+      "+5511987654321",
+    ]);
   });
 
   it("reconhece o mesmo celular brasileiro com ou sem o nono dígito", () => {

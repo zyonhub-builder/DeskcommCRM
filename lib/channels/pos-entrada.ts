@@ -54,6 +54,8 @@ import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-avis
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
+import { lerModoDeAcessoDaIa } from "@/lib/ai/elegibilidade/pre-go-live";
+import { temOrigemRastreada } from "@/lib/ai/elegibilidade/origem-rastreada";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -144,6 +146,7 @@ export async function aplicarEfeitosPosEntrada(
 
   await aplicarOptOut(admin, entrada);
   await guardarOrigemDaPagina(admin, entrada);
+  await autorizarOrigemRastreada(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
   // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
@@ -181,8 +184,7 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
       .eq("organization_id", entrada.organizationId)
       .eq("id", entrada.channelSessionId)
       .maybeSingle();
-    const gate = (sess?.metadata as Record<string, unknown> | null)?.ai_gate;
-    if (gate !== "allowlist") return;
+    if (lerModoDeAcessoDaIa(sess?.metadata ?? null) !== "allowlist") return;
 
     const { data: contato } = await admin
       .from("contacts")
@@ -214,6 +216,54 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
     });
   } catch (err) {
     logger.warn("pos-entrada: avaliação de campanha falhou (o despacho segue)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/**
+ * 2c · Origem rastreável também autoriza a IA no modo restrito.
+ *
+ * O modo `allowlist` não quer "frase mágica" como única porta. Se o contato já
+ * tem primeiro toque rastreado (Meta/Google, UTM, ref de link do CRM), a origem
+ * é forte o bastante para deixar a IA atender esse lead de campanha. Pré-go-live
+ * continua fechado: `lerModoDeAcessoDaIa` precisa devolver `allowlist`, não só
+ * `ai_gate=allowlist`.
+ */
+async function autorizarOrigemRastreada(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  try {
+    const { data: sess } = await admin
+      .from("channel_sessions")
+      .select("metadata")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.channelSessionId)
+      .maybeSingle();
+    if (lerModoDeAcessoDaIa(sess?.metadata ?? null) !== "allowlist") return;
+
+    const { data: contato } = await admin
+      .from("contacts")
+      .select("ai_authorized_at, source_metadata")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.contactId)
+      .maybeSingle();
+    if (contato?.ai_authorized_at != null) return;
+    if (!temOrigemRastreada((contato as { source_metadata?: unknown } | null)?.source_metadata))
+      return;
+
+    await autorizarContatoParaIA(admin, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+      reason: "campanha:origem-rastreada",
+      apenasSeNaoAutorizado: true,
+    });
+    logger.info("pos-entrada: contato autorizado para IA por origem rastreável", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+    });
+  } catch (err) {
+    logger.warn("pos-entrada: autorização por origem rastreável falhou (o despacho segue)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
@@ -318,20 +368,23 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
 
-  const { error } = await admin.rpc("emit_event" as never, {
-    p_event_type: "ai_agent.dispatch_requested",
-    p_entity_kind: "message",
-    p_entity_id: entrada.messageId,
-    p_payload: {
-      organization_id: entrada.organizationId,
-      conversation_id: entrada.conversationId,
-      contact_id: entrada.contactId,
-      channel_session_id: entrada.channelSessionId,
-      inbound_message_id: entrada.messageId,
-    },
-    p_metadata: { source: entrada.origem, request_id: entrada.requestId },
-    p_organization_id: entrada.organizationId,
-  } as never);
+  const { error } = await admin.rpc(
+    "emit_event" as never,
+    {
+      p_event_type: "ai_agent.dispatch_requested",
+      p_entity_kind: "message",
+      p_entity_id: entrada.messageId,
+      p_payload: {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        contact_id: entrada.contactId,
+        channel_session_id: entrada.channelSessionId,
+        inbound_message_id: entrada.messageId,
+      },
+      p_metadata: { source: entrada.origem, request_id: entrada.requestId },
+      p_organization_id: entrada.organizationId,
+    } as never,
+  );
 
   if (error) {
     logger.warn("pos-entrada: emit ai_agent.dispatch_requested falhou", {
@@ -417,7 +470,12 @@ async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): 
 
     const origem = { utm, capturadaEm: new Date().toISOString() };
 
-    const gravou = await estamparOrigemDaPagina(admin, entrada.organizationId, entrada.contactId, origem);
+    const gravou = await estamparOrigemDaPagina(
+      admin,
+      entrada.organizationId,
+      entrada.contactId,
+      origem,
+    );
     if (!gravou) {
       logger.warn("pos-entrada: origem da página NÃO gravada (a mensagem entra assim mesmo)", {
         contactId: entrada.contactId,

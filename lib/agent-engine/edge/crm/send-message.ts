@@ -1,13 +1,13 @@
-import { assertAgentOperationPg } from '@/lib/ai/agents/operation';
-import type { AgentOperationContext } from '@/lib/ai/agents/operation';
-import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
-import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
-import type { JobClaim } from '../../queue/claim';
-import { assertAgendaEffectPg } from '@/lib/agenda/efeito';
-import { AgendaDeferredError } from '@/lib/agenda/protecao-followup';
-import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
-import { requireCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
-import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
+import { assertAgentOperationPg } from "@/lib/ai/agents/operation";
+import type { AgentOperationContext } from "@/lib/ai/agents/operation";
+import { assertApprovedReplyPg, type ApprovedReplyContext } from "@/lib/ai/replies/delivery";
+import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from "@/lib/agenda/meet-delivery";
+import type { JobClaim } from "../../queue/claim";
+import { assertAgendaEffectPg } from "@/lib/agenda/efeito";
+import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
+import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Borda de saída pós-fusão: envio de mensagem SEMPRE via `sendMessageHandler` do
  * próprio app (app/api/v1/messages/_handler.ts) — o handler insere a linha
@@ -26,23 +26,27 @@ import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
  *      DEPOIS do envio) — achou, reconcilia o ledger sem reenviar; 'failed'
  *      rotaciona o id (tentativa lógica nova).
  */
-import { sendWithLedger, pgSendLedger, type SendOutcome } from './send-ledger';
-export type { SendOutcome, SendLedgerStatus } from './send-ledger';
+import { sendWithLedger, pgSendLedger, type SendOutcome } from "./send-ledger";
+export type { SendOutcome, SendLedgerStatus } from "./send-ledger";
 
-import { ApiError } from '@/lib/api/types';
-import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import type { Message } from '@/lib/types/messaging';
+import { ApiError } from "@/lib/api/types";
+import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import type { Message } from "@/lib/types/messaging";
+import { loadCredential } from "@/lib/ai/credentials";
+import { logger } from "@/lib/logger";
+import { storagePathFor } from "@/lib/messaging/media/types";
+import { sintetizarElevenLabs, sintetizarOpenAITts } from "@/lib/voice/whatsapp-elevenlabs";
 
-import type { Queryable } from '../../queue/queue';
-import { cancelJob, rescheduleJob, type JobRow } from '../../queue/queue';
-import { cancelPendingCronsForLead } from '../../cron/scheduler';
-import { CrmTransportError, type CrmEdgeConfig } from './mcp-client';
+import type { Queryable } from "../../queue/queue";
+import { cancelJob, rescheduleJob, type JobRow } from "../../queue/queue";
+import { cancelPendingCronsForLead } from "../../cron/scheduler";
+import { CrmTransportError, type CrmEdgeConfig } from "./mcp-client";
 
 /** Erro de negócio não classificado do handler (ex.: conversa inexistente) — ledger fica 'requested'. */
 export class SendToolError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'SendToolError';
+    this.name = "SendToolError";
   }
 }
 
@@ -63,8 +67,17 @@ export interface SendMessageInput {
    * colidirem no ledger e o segundo virar `already_sent` sem ter saído.
    */
   template?: { name: string; language: string; values: Record<string, string> };
-  /** Presente = imagem da pasta da conversa em `whatsapp-media`; `body` é a legenda. */
-  media?: { storagePath: string; mime: string };
+  /** Presente = mídia da pasta da conversa em `whatsapp-media`; `body` é legenda/transcrição. */
+  media?: { storagePath: string; mime: string; kind?: "image" | "audio" | "document" | "video" };
+  /** Presente = o sink tenta gerar áudio antes do envio; falha degrada para texto. */
+  voice?: {
+    provider: "elevenlabs" | "openai";
+    credentialId: string;
+    voiceId: string;
+    reason:
+      "audio_inbound" | "pedido_texto" | "dificuldade_leitura" | "preferencia_conversa" | "always";
+    voiceLabel?: string | null;
+  };
 }
 
 /**
@@ -80,26 +93,66 @@ export function corpoDoEnvio(
     conversation_id: input.conversationId,
     ...(input.template
       ? {
-          type: 'template' as const,
+          type: "template" as const,
           template_name: input.template.name,
           template_language: input.template.language,
           template_values: input.template.values,
         }
       : input.media
         ? {
-            type: 'image' as const,
+            type: input.media.kind ?? ("image" as const),
             media_storage_path: input.media.storagePath,
             media_mime: input.media.mime,
           }
-        : { type: 'text' as const }),
+        : { type: "text" as const }),
     // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.
-    ...(input.body !== '' || !input.media ? { body: input.body } : {}),
+    ...(input.body !== "" || !input.media ? { body: input.body } : {}),
     metadata: { idempotency_key: idempotencyKey },
   };
 }
 
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
-export const AGENT_ACTOR_ID = 'agent-engine';
+export const AGENT_ACTOR_ID = "agent-engine";
+
+async function prepararVozDoWhatsapp(
+  cfg: CrmEdgeConfig,
+  input: SendMessageInput,
+  messageId: string,
+): Promise<{ storagePath: string; mime: string; kind: "audio" } | null> {
+  if (!input.voice) return null;
+  try {
+    const cred = await loadCredential(input.voice.credentialId, input.tenantId);
+    if (cred.provider !== input.voice.provider) {
+      throw new Error(`credential_provider_mismatch:${cred.provider}`);
+    }
+    const audio =
+      input.voice.provider === "openai"
+        ? await sintetizarOpenAITts({
+            apiKey: cred.apiKey,
+            voiceId: input.voice.voiceId,
+            text: input.body,
+          })
+        : await sintetizarElevenLabs({
+            apiKey: cred.apiKey,
+            voiceId: input.voice.voiceId,
+            text: input.body,
+          });
+    const storagePath = storagePathFor(input.tenantId, input.conversationId, messageId, audio.mime);
+    const { error } = await cfg.supabase.storage
+      .from("whatsapp-media")
+      .upload(storagePath, audio.buffer, { contentType: audio.mime, upsert: true });
+    if (error) throw new Error(`voice_upload_failed:${error.message}`);
+    return { storagePath, mime: audio.mime, kind: "audio" };
+  } catch (err) {
+    logger.warn("voz do WhatsApp degradou para texto", {
+      organization_id: input.tenantId,
+      conversation_id: input.conversationId,
+      reason: input.voice.reason,
+      error: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
+    });
+    return null;
+  }
+}
 
 /**
  * Envia UMA mensagem do turno pelo handler do app. Intenção exactly-once,
@@ -113,7 +166,7 @@ export async function sendTurnMessage(
 ): Promise<SendOutcome> {
   if (input.agentOperation) await assertAgentOperationPg(db, input.agentOperation);
   const { rows: sourceJobs } = await db.query<{ kind: string; payload: Record<string, unknown> }>(
-    'select payload,kind from job_queue where id=$1 and organization_id=$2 and contact_id=$3',
+    "select payload,kind from job_queue where id=$1 and organization_id=$2 and contact_id=$3",
     [input.jobId, input.tenantId, input.leadId],
   );
   await requireCurrentServiceBoundary(
@@ -121,25 +174,25 @@ export async function sendTurnMessage(
     parseServiceBoundary(sourceJobs[0]?.payload.service_boundary),
   );
   const proactiveContext =
-    sourceJobs[0]?.kind === 'followup_turn' && input.leadId
+    sourceJobs[0]?.kind === "followup_turn" && input.leadId
       ? {
           organizationId: input.tenantId,
           contactId: input.leadId,
           jobId: input.jobId,
           jobClaim: input.jobClaim,
           enrollmentId:
-            typeof sourceJobs[0].payload.followup_enrollment_id === 'string'
+            typeof sourceJobs[0].payload.followup_enrollment_id === "string"
               ? sourceJobs[0].payload.followup_enrollment_id
               : undefined,
           nodeId:
-            typeof sourceJobs[0].payload.node_id === 'string'
+            typeof sourceJobs[0].payload.node_id === "string"
               ? sourceJobs[0].payload.node_id
               : undefined,
         }
       : undefined;
   if (proactiveContext) await assertAgendaEffectPg(db, proactiveContext);
   let meetingDelivery: MeetingDeliveryContext | undefined;
-  if (sourceJobs[0]?.kind === 'transactional_delivery') {
+  if (sourceJobs[0]?.kind === "transactional_delivery") {
     if (!input.jobClaim) throw new StaleServiceBoundaryError();
     meetingDelivery = {
       organizationId: input.tenantId,
@@ -149,7 +202,7 @@ export async function sendTurnMessage(
     await assertMeetingDeliveryPg(db, meetingDelivery);
   }
   let approvedReply: ApprovedReplyContext | undefined;
-  if (sourceJobs[0]?.kind === 'approved_reply') {
+  if (sourceJobs[0]?.kind === "approved_reply") {
     if (!input.jobClaim) throw new StaleServiceBoundaryError();
     approvedReply = {
       organizationId: input.tenantId,
@@ -163,11 +216,18 @@ export async function sendTurnMessage(
   return sendWithLedger(pgSendLedger(db), input, async (idempotencyKey, messageId) => {
     let message: Message;
     try {
+      const voiceMedia = await prepararVozDoWhatsapp(cfg, input, messageId);
+      const payloadDoEnvio: SendMessageInput = voiceMedia
+        ? {
+            ...input,
+            media: voiceMedia,
+          }
+        : input;
       message = await sendMessageHandler(
         cfg.supabase,
         {
           organization_id: input.tenantId,
-          actor: { type: 'ai_agent', id: cfg.agentActorId ?? AGENT_ACTOR_ID, role: 'manager' },
+          actor: { type: "ai_agent", id: cfg.agentActorId ?? AGENT_ACTOR_ID, role: "manager" },
           requestId: idempotencyKey,
           serviceBoundary: parseServiceBoundary(sourceJobs[0]?.payload.service_boundary),
           proactiveContext,
@@ -176,7 +236,7 @@ export async function sendTurnMessage(
           agentOperation: input.agentOperation,
           internalMessageId: messageId,
         },
-        corpoDoEnvio(input, idempotencyKey),
+        corpoDoEnvio(payloadDoEnvio, idempotencyKey),
       );
     } catch (err) {
       if (err instanceof AgendaDeferredError || err instanceof StaleServiceBoundaryError) throw err;
@@ -184,8 +244,8 @@ export async function sendTurnMessage(
         throw err;
       }
       if (err instanceof ApiError && err.status === 404) {
-        await touchLedgerError(db, input.tenantId, idempotencyKey, 'conversa não encontrada');
-        throw new SendToolError('envio recusado: conversa não encontrada');
+        await touchLedgerError(db, input.tenantId, idempotencyKey, "conversa não encontrada");
+        throw new SendToolError("envio recusado: conversa não encontrada");
       }
       // Qualquer outra falha (Supabase fora, erro interno do handler): transiente —
       // o ledger fica 'requested' e o replay reconcilia pela key.
@@ -212,11 +272,11 @@ async function touchLedgerError(
 
 export type SendDisposition =
   /** Job cancelado em definitivo (veto is_blocked) — não re-tenta. */
-  | { action: 'canceled'; job: JobRow | null }
+  | { action: "canceled"; job: JobRow | null }
   /** Job devolvido a 'pending' com run_after adiado, sem consumir attempts. */
-  | { action: 'requeued'; job: JobRow | null }
+  | { action: "requeued"; job: JobRow | null }
   /** Nada a fazer com o job aqui: 'sent'/'already_sent' seguem para complete; 'failed' segue para failJob. */
-  | { action: 'none' };
+  | { action: "none" };
 
 /**
  * Disposição do JOB conforme o outcome do envio:
@@ -240,28 +300,28 @@ export async function applySendOutcome(
   knobs: { queuedRetryDelayMs: number },
 ): Promise<SendDisposition> {
   switch (outcome.kind) {
-    case 'blocked': {
+    case "blocked": {
       const canceled = await cancelJob(
         db,
         job.jobId,
         job.workerId,
-        'envio vetado pelo sink: contato bloqueado (is_blocked) — opt-out irrevogável',
+        "envio vetado pelo sink: contato bloqueado (is_blocked) — opt-out irrevogável",
         job.jobClaim?.acquired_at,
       );
       if (job.leadId) {
         await cancelPendingCronsForLead(db, job.tenantId, job.leadId);
       }
-      return { action: 'canceled', job: canceled };
+      return { action: "canceled", job: canceled };
     }
-    case 'queued': {
+    case "queued": {
       const requeued = await rescheduleJob(db, job.jobId, job.workerId, {
         delayMs: knobs.queuedRetryDelayMs,
         acquiredAt: job.jobClaim?.acquired_at,
-        reason: 'sessão do canal fora (resposta queued) — reagendado sem consumir attempts',
+        reason: "sessão do canal fora (resposta queued) — reagendado sem consumir attempts",
       });
-      return { action: 'requeued', job: requeued };
+      return { action: "requeued", job: requeued };
     }
     default:
-      return { action: 'none' };
+      return { action: "none" };
   }
 }

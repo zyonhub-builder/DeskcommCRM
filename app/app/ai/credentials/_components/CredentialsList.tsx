@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus } from "@/lib/ui/icons";
 import {
+  ehProvedorDeAudio,
   ehProvedorDeDecisao,
   ehProvedorSuportado,
   PROVEDORES_COM_CHAVE,
@@ -82,9 +83,9 @@ export function CredentialsList({
   // Sem este aviso a tela sairia do estado vazio e pareceria pronta. Mas quem
   // atende com a chave que veio na instalação JÁ tem a IA principal: avisar ali
   // seria alarme falso sobre o que está funcionando.
-  const soDecisao =
+  const soComplementar =
     !instalacaoTemIa &&
-    credentials.some((c) => ehProvedorDeDecisao(c.provider)) &&
+    credentials.some((c) => ehProvedorDeDecisao(c.provider) || ehProvedorDeAudio(c.provider)) &&
     // A chave de conversa RECUSADA não atende ninguém. A que ainda está em
     // teste conta: sem isso o aviso piscaria nos segundos depois de colar.
     !credentials.some(
@@ -98,7 +99,7 @@ export function CredentialsList({
           <h2 className="font-medium">{t("Nenhuma chave cadastrada ainda")}</h2>
           <p className="max-w-md text-sm text-muted-foreground">
             {t(
-              "Seus agentes só conseguem pensar depois que você cola aqui uma chave da Anthropic, da OpenAI ou do Google. A cobrança vai direto para a sua conta no provedor, e a chave fica guardada criptografada.",
+              "Seus agentes só conseguem pensar depois que você cola aqui uma chave de IA principal. Para respostas em áudio, cadastre também a ElevenLabs. A cobrança vai direto para a sua conta no provedor, e a chave fica guardada criptografada.",
             )}
           </p>
           {canWrite && (
@@ -114,10 +115,10 @@ export function CredentialsList({
 
   return (
     <div className="flex flex-col gap-6">
-      {soDecisao && (
+      {soComplementar && (
         <Card className="border-amber-500/40 bg-amber-500/5 p-4" data-testid="aviso-so-decisao">
           <p className="text-sm">
-            {t("O Jev não conversa com o cliente — falta a chave da sua IA principal.")}
+            {t("Jev e ElevenLabs não conversam com o cliente — falta a chave da sua IA principal.")}
           </p>
         </Card>
       )}

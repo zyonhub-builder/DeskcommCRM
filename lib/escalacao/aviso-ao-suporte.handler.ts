@@ -25,6 +25,7 @@ import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
 import { env } from "@/lib/env";
 import { origemDoDreno } from "@/lib/event-log/origem-do-dreno";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { destinoDeAvisoEhGrupo } from "@/lib/escalacao/destino-do-aviso";
 import {
   EVENTO_CASO_ABERTO,
   EVENTO_CASO_FECHADO,
@@ -101,9 +102,8 @@ export const avisoDeCasoAoSuporteHandler: EventHandler = {
 export async function criarTransporteDoAviso(
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<TransporteDoAviso> {
-  const { getAdapter, resolveSessionRef, CHANNEL_SESSION_REF_COLUMNS } = await import(
-    "@/lib/channels"
-  );
+  const { getAdapter, resolveSessionRef, CHANNEL_SESSION_REF_COLUMNS } =
+    await import("@/lib/channels");
 
   /**
    * Uma leitura por canal, memoizada pelo id.
@@ -143,12 +143,14 @@ export async function criarTransporteDoAviso(
     async resolveDestino(organizationId, canal, telefone) {
       const ref = await refDoCanal(organizationId, canal.id);
       if (!ref) return null;
-      // O CHECK do banco já garantiu E.164 com `+`. Quem traduz para o endereço
-      // do canal é o adapter — e é por isso que a tradução não mora aqui.
+      // O CHECK do banco já garantiu telefone E.164 ou JID de grupo. Quem
+      // traduz para o endereço do canal é o adapter — e é por isso que a
+      // tradução não mora aqui.
+      const grupo = destinoDeAvisoEhGrupo(telefone);
       return getAdapter(ref.provider as never).resolveRecipient({
-        isGroup: false,
-        groupChatId: null,
-        phoneNumber: telefone,
+        isGroup: grupo,
+        groupChatId: grupo ? telefone : null,
+        phoneNumber: grupo ? null : telefone,
         waIdentity: null,
         waLid: null,
       });

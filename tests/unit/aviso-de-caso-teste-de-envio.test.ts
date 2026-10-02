@@ -23,15 +23,13 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  enviarAvisoDeTeste,
-  type DepsDoAvisoDeTeste,
-} from "@/lib/escalacao/aviso-de-teste";
+import { enviarAvisoDeTeste, type DepsDoAvisoDeTeste } from "@/lib/escalacao/aviso-de-teste";
 import type { CanalDoAviso } from "@/lib/escalacao/aviso-ao-suporte";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CANAL = "22222222-2222-4222-8222-222222222222";
 const TELEFONE = "+5531998966398";
+const GRUPO = "120363412080714368@g.us";
 const AGORA = new Date("2026-09-18T12:00:00.000Z");
 
 const canalSaudavel: CanalDoAviso = {
@@ -105,6 +103,23 @@ describe("o caminho feliz", () => {
     const { deps: d, ledger } = deps();
     await enviarAvisoDeTeste(d, entrada);
     expect(ledger).toEqual([{ canal: CANAL, quando: AGORA }]);
+  });
+
+  it("grupo vai direto como JID e não passa pela guarda de telefone da própria organização", async () => {
+    const { deps: d, enviados } = deps();
+    d.db.destinoEhDaPropriaOrganizacao = vi.fn(async () => true);
+    d.transporte.resolveDestino = vi.fn(async (_org, _canal, destino: string) => destino);
+
+    const r = await enviarAvisoDeTeste(d, {
+      organizationId: ORG,
+      channelSessionId: CANAL,
+      telefone: GRUPO,
+    });
+
+    expect(r).toMatchObject({ enviado: true, destinoMascarado: "grupo ••••4368" });
+    expect(d.db.destinoEhDaPropriaOrganizacao).not.toHaveBeenCalled();
+    expect(d.transporte.resolveDestino).toHaveBeenCalledWith(ORG, canalSaudavel, GRUPO);
+    expect(enviados[0]?.to).toBe(GRUPO);
   });
 
   it("não escreve no registro de entregas — o `db` que ele recebe só tem TRÊS leituras", async () => {

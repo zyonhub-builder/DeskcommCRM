@@ -90,7 +90,7 @@ const canalMudo = (over: Record<string, unknown> = {}) => ({
   status: "WORKING",
   archived_at: null,
   last_status_change_at: diasAtras(5),
-  metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
+  metadata: { ai_gate: "allowlist", ai_gate_mode: "pre_go_live", ai_test_phone_numbers: [] },
   ...over,
 });
 
@@ -138,7 +138,15 @@ describe("canal-mudo-watcher", () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
-        [canalMudo({ metadata: { ai_gate: "allowlist", ai_test_phone_numbers: ["+5511999990000"] } })],
+        [
+          canalMudo({
+            metadata: {
+              ai_gate: "allowlist",
+              ai_gate_mode: "pre_go_live",
+              ai_test_phone_numbers: ["+5511999990000"],
+            },
+          }),
+        ],
         [{ id: "aviso-1", ref_id: CANAL }],
         cap,
       ) as never,
@@ -157,7 +165,11 @@ describe("canal-mudo-watcher", () => {
   it("canal que saiu do modo de teste também resolve", async () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
-      admin([canalMudo({ metadata: { ai_gate: "open" } })], [{ id: "aviso-1", ref_id: CANAL }], cap) as never,
+      admin(
+        [canalMudo({ metadata: { ai_gate: "open" } })],
+        [{ id: "aviso-1", ref_id: CANAL }],
+        cap,
+      ) as never,
     );
 
     await GET(req());
@@ -171,7 +183,11 @@ describe("canal-mudo-watcher", () => {
     // um canal deixaria o aviso dele aberto para sempre.
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
-      admin([], [{ id: "aviso-orfao", ref_id: "33333333-3333-4333-8333-333333333333" }], cap) as never,
+      admin(
+        [],
+        [{ id: "aviso-orfao", ref_id: "33333333-3333-4333-8333-333333333333" }],
+        cap,
+      ) as never,
     );
 
     const r = await GET(req());

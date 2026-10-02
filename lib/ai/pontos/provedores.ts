@@ -21,8 +21,9 @@
  * repo já viu divergir em silêncio (catálogo × preço). Por isso
  * `tests/unit/provedores-x-registry.test.ts` casa uma com a outra.
  *
- * `PROVEDORES` é só quem ESCREVE texto. Provedor que só decide (o Jev) mora em
- * `PROVEDORES_DE_DECISAO`, no fim deste arquivo — e o porquê está lá.
+ * `PROVEDORES` é só quem ESCREVE texto. Provedor que só decide (o Jev) e
+ * provedor que só transforma texto em áudio moram em listas irmãs, no fim deste
+ * arquivo — e o porquê está lá.
  */
 
 /** Como a chave daquele provedor é validada e o que a tela precisa pedir. */
@@ -178,6 +179,27 @@ export const PROVEDORES_DE_DECISAO = [
   },
 ] as const satisfies readonly ProvedorSuportado[];
 
+/**
+ * OS PROVEDORES QUE TÊM CHAVE E NÃO ESCREVEM TEXTO — áudio de saída.
+ *
+ * ElevenLabs recebe texto JÁ decidido pelo agente e devolve um arquivo de voz.
+ * Ele não escolhe resposta, não executa tools, não participa do painel de
+ * modelos e não pode aparecer como cérebro de atendimento. Mesmo assim a chave
+ * precisa da mesma casa segura das outras: cifrada, rotacionável e auditável.
+ */
+export const PROVEDORES_DE_AUDIO = [
+  {
+    id: "elevenlabs",
+    rotulo: "ElevenLabs",
+    quandoUsar:
+      "Usado para transformar a resposta do agente em áudio no WhatsApp, inclusive com uma voz já criada e autorizada na sua conta da ElevenLabs.",
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",
+    prefixoDaChave: "sk_…",
+  },
+] as const satisfies readonly ProvedorSuportado[];
+
 export const IDS_DE_PROVEDOR_DE_DECISAO = PROVEDORES_DE_DECISAO.map(
   (p) => p.id,
 ) as unknown as readonly [
@@ -185,8 +207,17 @@ export const IDS_DE_PROVEDOR_DE_DECISAO = PROVEDORES_DE_DECISAO.map(
   ...(typeof PROVEDORES_DE_DECISAO)[number]["id"][],
 ];
 
+export const IDS_DE_PROVEDOR_DE_AUDIO = PROVEDORES_DE_AUDIO.map((p) => p.id) as unknown as readonly [
+  (typeof PROVEDORES_DE_AUDIO)[number]["id"],
+  ...(typeof PROVEDORES_DE_AUDIO)[number]["id"][],
+];
+
 /** Tudo o que tem chave cadastrável: a tela de Credenciais e a rota dela. */
-export const PROVEDORES_COM_CHAVE = [...PROVEDORES, ...PROVEDORES_DE_DECISAO] as const;
+export const PROVEDORES_COM_CHAVE = [
+  ...PROVEDORES,
+  ...PROVEDORES_DE_DECISAO,
+  ...PROVEDORES_DE_AUDIO,
+] as const;
 
 export type ProvedorComChave = (typeof PROVEDORES_COM_CHAVE)[number]["id"];
 
@@ -197,6 +228,10 @@ export const IDS_COM_CHAVE = PROVEDORES_COM_CHAVE.map((p) => p.id) as unknown as
 
 export function ehProvedorDeDecisao(id: string): boolean {
   return (IDS_DE_PROVEDOR_DE_DECISAO as readonly string[]).includes(id);
+}
+
+export function ehProvedorDeAudio(id: string): boolean {
+  return (IDS_DE_PROVEDOR_DE_AUDIO as readonly string[]).includes(id);
 }
 
 /**

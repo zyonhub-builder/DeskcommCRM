@@ -39,7 +39,7 @@ import {
 } from "../../scripts/lib/gate-ativacao";
 
 const RAIZ = process.cwd();
-const MIGRATION = "supabase/migrations/20260914210000_0251_acesso_da_ia_volta_a_trilha_do_operador.sql";
+const MIGRATION = "supabase/migrations/20261002002000_0453_acesso_ia_por_campanha.sql";
 const SCRIPT = "scripts/ativar-gate-elegibilidade-ia.ts";
 const TTL_MS = 21 * 86_400_000;
 /** O mesmo telefone-exemplo que o produto mostra na tela. */
@@ -59,7 +59,9 @@ const ABERTO_COM_MARCADOR_VENCIDO: Record<string, unknown> = {
 /** A última definição da RPC — no baseline é a do apêndice mais recente. */
 function corpoDaRpc(arquivo: string): string {
   const fonte = readFileSync(resolve(RAIZ, arquivo), "utf8");
-  const inicio = fonte.lastIndexOf("create or replace function public.fn_configurar_pre_go_live_canal(");
+  const inicio = fonte.lastIndexOf(
+    "create or replace function public.fn_configurar_pre_go_live_canal(",
+  );
   expect(inicio, `a RPC do pré-go-live sumiu de ${arquivo}`).toBeGreaterThan(-1);
   return fonte.slice(inicio).split("\n$$;")[0]!;
 }
@@ -111,10 +113,14 @@ describe("o acesso da IA volta à trilha do operador (issue #602)", () => {
     // em arquivo. Os dois têm de dizer a mesma coisa.
     for (const arquivo of ["supabase/baseline.sql", MIGRATION]) {
       const corpo = corpoDaRpc(arquivo);
-      expect(expressaoDaChave(corpo, "ai_gate_mode"), `${arquivo} grava um literal`).toBe("to_jsonb(p_modo)");
+      expect(expressaoDaChave(corpo, "ai_gate_mode"), `${arquivo} grava um literal`).toBe(
+        "to_jsonb(p_modo)",
+      );
       expect(expressaoDaChave(corpo, "ai_gate")).toBe("to_jsonb(v_gate)");
       // Guarda de vacuidade: a tradução do modo para o gate continua a mesma.
-      expect(corpo).toContain("case when p_modo = 'pre_go_live' then 'allowlist' else 'open' end");
+      expect(corpo).toContain(
+        "case when p_modo in ('allowlist', 'pre_go_live') then 'allowlist' else 'open' end",
+      );
     }
   });
 
@@ -128,7 +134,9 @@ describe("o acesso da IA volta à trilha do operador (issue #602)", () => {
     expect(bloco).toMatch(/'\{ai_gate_mode\}'/);
     // Os valores vêm do contrato compartilhado com o preflight — não de um
     // literal no meio do SQL, que é onde os dois divergem sem ninguém ver.
-    expect(bloco).toMatch(/\[\s*canal\.id,\s*canal\.organization_id,\s*depois\.ai_gate,\s*depois\.ai_gate_mode\s*\]/);
+    expect(bloco).toMatch(
+      /\[\s*canal\.id,\s*canal\.organization_id,\s*depois\.ai_gate,\s*depois\.ai_gate_mode\s*\]/,
+    );
     expect(bloco).not.toMatch(/JSON\.stringify\(ALVO_MODO\)/);
   });
 
@@ -160,7 +168,9 @@ describe("o acesso da IA volta à trilha do operador (issue #602)", () => {
       motivo: "autorizado",
       bloqueioPorAllowlist: false,
     });
-    expect(decisaoDoMotor(depoisDoCli, { aiAuthorizedAt: null }, agora).motivo).toBe("sem_autorizacao");
+    expect(decisaoDoMotor(depoisDoCli, { aiAuthorizedAt: null }, agora).motivo).toBe(
+      "sem_autorizacao",
+    );
     expect(depoisDoCli.ai_test_phone_numbers).toEqual([TELEFONE_DE_TESTE]);
   });
 
@@ -170,7 +180,9 @@ describe("o acesso da IA volta à trilha do operador (issue #602)", () => {
     // A escrita ANTIGA (só `ai_gate`) deixava a metadata assim — e o contato com
     // autorização por origem era bloqueado em silêncio.
     const comoOCliAntigoDeixava = { ...ABERTO_COM_MARCADOR_VENCIDO, ai_gate: "allowlist" };
-    expect(decisaoDoMotor(comoOCliAntigoDeixava, { aiAuthorizedAt: agora.toISOString() }, agora)).toEqual({
+    expect(
+      decisaoDoMotor(comoOCliAntigoDeixava, { aiAuthorizedAt: agora.toISOString() }, agora),
+    ).toEqual({
       permite: false,
       motivo: "fora_da_lista_de_teste",
       bloqueioPorAllowlist: true,
@@ -199,7 +211,11 @@ describe("o acesso da IA volta à trilha do operador (issue #602)", () => {
       agora,
     );
     expect(promessa.comOrigem).toEqual(lidoPeloMotor);
-    expect(promessa.comOrigem).toEqual({ permite: true, motivo: "autorizado", bloqueioPorAllowlist: false });
+    expect(promessa.comOrigem).toEqual({
+      permite: true,
+      motivo: "autorizado",
+      bloqueioPorAllowlist: false,
+    });
     expect(promessa.semOrigem.motivo).toBe("sem_autorizacao");
 
     // …e o plano impresso diz o mesmo, inclusive que o canal sai do pré-go-live.

@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
   enviarAlertaDeInstancia,
   motivoLegivelDoAvisoDeInstancia,
@@ -24,6 +25,8 @@ export async function POST(_req: NextRequest): Promise<Response> {
   } catch {
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
 
   const balde = await checkRateLimit(
     `platform-instance-alert-test:${ctx.user.id}`,

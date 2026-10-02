@@ -122,11 +122,13 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   },
   {
     fn: "fn_set_channel_routing(uuid,uuid,uuid[],boolean)",
-    razao: "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão; RPC exige manager, suporte de escrita, MFA e canal/membros da org na mesma transação. tests/invariants/channel-routing.test.ts prova viewer, tenants A/B, membro revogado, policy vazia e MFA platform aal1/aal2.",
+    razao:
+      "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão; RPC exige manager, suporte de escrita, MFA e canal/membros da org na mesma transação. tests/invariants/channel-routing.test.ts prova viewer, tenants A/B, membro revogado, policy vazia e MFA platform aal1/aal2.",
   },
   {
     fn: "fn_reserve_channel_connection(uuid,uuid,text,text,boolean)",
-    razao: "lib/channels/connect-waha.ts recebe createClient das rotas channel-sessions e onboarding/whatsapp/session; RPC exige admin, suporte e MFA, cria identidade org-owned com recibo privado. tests/invariants/channel-routing.test.ts prova lease/replay/ACL do recibo e MFA platform aal1/aal2.",
+    razao:
+      "lib/channels/connect-waha.ts recebe createClient das rotas channel-sessions e onboarding/whatsapp/session; RPC exige admin, suporte e MFA, cria identidade org-owned com recibo privado. tests/invariants/channel-routing.test.ts prova lease/replay/ACL do recibo e MFA platform aal1/aal2.",
   },
   {
     fn: "fn_google_selection(uuid,jsonb,uuid[],uuid)",
@@ -228,9 +230,10 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "INSERT/UPDATE/DELETE para authenticated, só `grant select` sob RLS de " +
       "admin. A função exige, na MESMA transação: auth.uid() não nulo, " +
       "fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org), " +
-      "fn_session_mfa_proven(), E.164 no destino, canal DA organização e não " +
-      "arquivado, recusa do número da própria organização (o laço robô-com-robô) " +
-      "e recusa de número que já é contato, a menos que p_confirma_contato. " +
+      "fn_session_mfa_proven(), telefone E.164 ou JID de grupo no destino, " +
+      "canal DA organização e não arquivado, recusa do número da própria " +
+      "organização (o laço robô-com-robô) e recusa de número que já é contato, " +
+      "a menos que p_confirma_contato. " +
       "tests/invariants/aviso-de-caso-escrita.test.ts prova agent e viewer " +
       "recusados (42501), admin aprovado, admin de OUTRA organização recusado, " +
       "canal do vizinho recusado e anon sem EXECUTE. " +

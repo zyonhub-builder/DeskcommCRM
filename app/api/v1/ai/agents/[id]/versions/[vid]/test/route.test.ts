@@ -14,6 +14,7 @@ import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import type * as SupportModule from "@/lib/impersonate/support";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
@@ -31,7 +32,7 @@ const USER = "11111111-1111-4111-8111-111111111111";
 const AGENT = "33333333-3333-4333-8333-333333333333";
 const VERSION = "44444444-4444-4444-8444-444444444444";
 
-function stubAdmin(atualizacoes: Record<string, unknown>[]) {
+function stubAdmin(atualizacoes: Record<string, unknown>[], versionStatus = "draft") {
   return {
     from: (table: string) => {
       if (table === "ai_agent_versions") {
@@ -45,6 +46,7 @@ function stubAdmin(atualizacoes: Record<string, unknown>[]) {
                       id: VERSION,
                       agent_id: AGENT,
                       organization_id: ORG,
+                      status: versionStatus,
                       system_prompt: "oi",
                       provider: "anthropic",
                       model: "claude-sonnet-4-6",
@@ -87,6 +89,7 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
   const turnDeps = {};
 
   beforeEach(() => {
+    vi.clearAllMocks();
     atualizacoes.length = 0;
     const user: AuthUser = {
       id: USER,
@@ -118,6 +121,10 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
     const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
     const body = (await res.json()) as { error?: { code?: string; message?: string } };
 
+    expect(requireRole).toHaveBeenCalledWith(
+      "viewer",
+      expect.objectContaining({ resource: "ai_agents" }),
+    );
     expect(testAgentVersion).toHaveBeenCalledWith(
       requestPool,
       turnDeps,
@@ -132,7 +139,8 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
     expect(res.status).toBe(422);
     expect(body.error).toMatchObject({
       code: "preview_failed",
-      message: "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
+      message:
+        "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
     });
     expect(body.error?.message).not.toContain("AI_GATEWAY_API_KEY");
     // ⚠️ `failed`, não `"error"`. Este teste cobrava `"error"` — e passava,
@@ -141,16 +149,115 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
     // teste verde e a produção quebrada conviviam. O vocabulário da coluna está
     // agora sob `tests/unit/teste-do-agente-usa-status-que-a-coluna-aceita.test.ts`,
     // que lê o CHECK do `baseline.sql` em vez de confiar num mock.
-    expect(atualizacoes).toContainEqual(expect.objectContaining({
-      status: "failed",
-      error_code: "preview_failed",
-    }));
+    expect(atualizacoes).toContainEqual(
+      expect.objectContaining({
+        status: "failed",
+        error_code: "preview_failed",
+      }),
+    );
+  });
+
+  it("encaminha o histórico completo da conversa de teste", async () => {
+    vi.mocked(testAgentVersion).mockResolvedValueOnce({
+      candidates: [{ body: "Quando aconteceu?", citations: [], trace: [] }],
+      proposals: [],
+      impediments: [],
+      restrictions: [],
+    });
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sample_message: "ontem",
+        sample_messages: [
+          {
+            direction: "inbound",
+            body: "tive um acidente",
+            sent_at: "2026-09-28T18:00:00.000Z",
+          },
+          {
+            direction: "outbound",
+            body: "Esse acidente aconteceu quando?",
+            sent_at: "2026-09-28T18:00:05.000Z",
+          },
+          {
+            direction: "inbound",
+            body: "ontem",
+            sent_at: "2026-09-28T18:00:10.000Z",
+          },
+        ],
+        skip_checkpoint: true,
+      }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+
+    expect(res.status).toBe(200);
+    expect(testAgentVersion).toHaveBeenCalledWith(
+      requestPool,
+      turnDeps,
+      expect.objectContaining({
+        sampleMessage: "ontem",
+        skipCheckpoint: true,
+        sampleMessages: [
+          {
+            direction: "inbound",
+            body: "tive um acidente",
+            sent_at: "2026-09-28T18:00:00.000Z",
+          },
+          {
+            direction: "outbound",
+            body: "Esse acidente aconteceu quando?",
+            sent_at: "2026-09-28T18:00:05.000Z",
+          },
+          {
+            direction: "inbound",
+            body: "ontem",
+            sent_at: "2026-09-28T18:00:10.000Z",
+          },
+        ],
+      }),
+    );
+    expect(atualizacoes).toContainEqual(expect.objectContaining({ status: "completed" }));
+  });
+
+  it("viewer não testa rascunho por UUID direto", async () => {
+    const user: AuthUser = {
+      id: USER,
+      email: "viewer@example.com",
+      full_name: null,
+      avatar_url: null,
+      is_platform_admin: false,
+      idioma: "pt-BR" as const,
+      organizations: [{ organization_id: ORG, organization_name: "Org", role: "viewer" }],
+    };
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user,
+      org: { orgId: ORG, name: "Org", role: "viewer" },
+    });
+    vi.mocked(createAdminClient).mockReturnValue(stubAdmin(atualizacoes, "draft") as never);
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sample_message: "oi" }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+
+    expect(res.status).toBe(403);
+    expect(body.error?.code).toBe("forbidden_role");
+    expect(testAgentVersion).not.toHaveBeenCalled();
+    expect(atualizacoes).toEqual([]);
   });
 });
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...(await importOriginal<typeof SupportModule>()),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

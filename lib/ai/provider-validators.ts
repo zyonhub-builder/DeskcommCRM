@@ -307,6 +307,34 @@ export async function validateTypeSafeKey(apiKey: string): Promise<ValidationRes
 }
 
 /**
+ * ElevenLabs prova a chave listando as vozes disponíveis na conta. O endpoint
+ * usa `xi-api-key` (não Bearer) e não gera áudio, então valida sem consumir TTS.
+ * A lista de vozes é útil para a tela: o `voice_id` que a configuração pede sai
+ * justamente daqui, embora o CRM deixe o operador colar o id manualmente.
+ */
+export async function validateElevenLabsKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch("https://api.elevenlabs.io/v1/voices", {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { voices?: { voice_id?: string; name?: string }[] };
+    const models = (json.voices ?? [])
+      .map((v) => (v.name ? `${v.name} (${v.voice_id ?? ""})` : (v.voice_id ?? "")))
+      .filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
+/**
  * O provedor personalizado (#1642) não tem endpoint canônico: o endereço vem
  * da credencial (`ai_provider_credentials.base_url`) e é ele quem recebe a
  * chave. `GET {base}/models` é a mesma prova dos outros OpenAI-compatíveis —
@@ -394,6 +422,8 @@ export function validateProviderKey(
       return validateCustomKey(apiKey, baseUrl);
     case "typesafe":
       return validateTypeSafeKey(apiKey);
+    case "elevenlabs":
+      return validateElevenLabsKey(apiKey);
     default: {
       // Sem `never` aqui: o tipo é derivado das listas, e elas
       // crescem sem que este arquivo saiba. Provedor novo cadastrado antes de

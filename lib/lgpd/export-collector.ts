@@ -7,9 +7,14 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mascararDestinoDoAviso } from "@/lib/escalacao/destino-do-aviso";
 import { citacaoDaLei, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { logger } from "@/lib/logger";
-import { camposLegiveis, perguntasDosGrafos, type CampoLegivel } from "@/lib/lgpd/campos-personalizados";
+import {
+  camposLegiveis,
+  perguntasDosGrafos,
+  type CampoLegivel,
+} from "@/lib/lgpd/campos-personalizados";
 import { maskPhone } from "@/lib/lgpd/mask";
 import type { Json } from "@/lib/database.types";
 
@@ -340,10 +345,10 @@ export interface PassagemDeAtendimentoRow {
  * O registro de que a equipe foi (ou não foi) avisada no WhatsApp sobre um caso
  * do titular — migration 0292.
  *
- * ⚠️ `destino` entra MASCARADO. Ele é o telefone de um FUNCIONÁRIO, não do
- * titular: entregá-lo inteiro num relatório do Art. 18 II trocaria o dado
- * pessoal de uma pessoa pelo de outra. O que o titular tem direito de saber é
- * QUE houve um aviso sobre o atendimento dele, quando, e se chegou.
+ * ⚠️ `destino` entra MASCARADO. Ele é telefone de funcionário ou grupo interno,
+ * não dado do titular: entregá-lo inteiro num relatório do Art. 18 II trocaria
+ * o dado pessoal de uma pessoa pelo de outra. O que o titular tem direito de
+ * saber é QUE houve um aviso sobre o atendimento dele, quando, e se chegou.
  *
  * O corpo do aviso não aparece porque ele NÃO É GUARDADO — a tabela tem só o
  * resumo criptográfico, e um hash não reidentifica ninguém.
@@ -658,7 +663,12 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   const { organizationId, requestId, externalCustomerId } = args;
   // ANTES do primeiro `return`: o caminho "nenhum dado localizado" também gera
   // um relatório entregue ao titular, e ele precisa nomear o controlador igual.
-  const controlador = await lerControlador(admin, organizationId, requestId, args.dpoDaInstalacao ?? null);
+  const controlador = await lerControlador(
+    admin,
+    organizationId,
+    requestId,
+    args.dpoDaInstalacao ?? null,
+  );
   let contactId = args.contactId;
 
   // Resolve contact_id when only external customer id is provided.
@@ -704,7 +714,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
     if (data) {
       const customFields =
-        data.custom_fields && typeof data.custom_fields === "object" && !Array.isArray(data.custom_fields)
+        data.custom_fields &&
+        typeof data.custom_fields === "object" &&
+        !Array.isArray(data.custom_fields)
           ? (data.custom_fields as Record<string, unknown>)
           : {};
       // Os rótulos vêm das perguntas dos roteiros que o contato percorreu. Duas
@@ -719,7 +731,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         .order("started_at", { ascending: false })
         .limit(50);
       const versaoIds = [
-        ...new Set((inscricoes ?? []).flatMap((r) => (r.version_id ? [r.version_id as string] : []))),
+        ...new Set(
+          (inscricoes ?? []).flatMap((r) => (r.version_id ? [r.version_id as string] : [])),
+        ),
       ];
       if (versaoIds.length > 0 && !inscricoesErr) {
         const { data: versoes, error: versoesErr } = await admin
@@ -728,7 +742,10 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
           .eq("organization_id", organizationId)
           .in("id", versaoIds);
         if (versoesErr) {
-          logger.warn("[lgpd-export-worker] roteiros load failed", { request_id: requestId, error: versoesErr.message });
+          logger.warn("[lgpd-export-worker] roteiros load failed", {
+            request_id: requestId,
+            error: versoesErr.message,
+          });
         }
         const porId = new Map((versoes ?? []).map((v) => [v.id as string, v.graph]));
         for (const id of versaoIds) grafos.push(porId.get(id)); // o mais recente primeiro
@@ -1349,7 +1366,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         // UM literal, sem concatenação: o supabase-js lê a lista de colunas do
         // TIPO da string para inferir a linha, e `"a" + "b"` vira `string` —
         // a linha volta como `GenericStringError` e o `push` não compila.
-        .select("id, conversation_id, caso_id, motor, origem, motivo_codigo, title, body, notes, content, tentativas, cliente_avisado, aviso_motivo_codigo, criado_em, reconhecido_em")
+        .select(
+          "id, conversation_id, caso_id, motor, origem, motivo_codigo, title, body, notes, content, tentativas, cliente_avisado, aviso_motivo_codigo, criado_em, reconhecido_em",
+        )
         .eq("organization_id", organizationId)
         .eq("contact_id", contactId)
         .order("id")
@@ -1407,7 +1426,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         }
         for (const linha of pagina ?? []) {
           const { destino, ...resto } = linha;
-          avisos_de_caso.push({ ...resto, destino_mascarado: maskPhone(destino) });
+          avisos_de_caso.push({ ...resto, destino_mascarado: mascararDestinoDoAviso(destino) });
         }
         if (!pagina || pagina.length < pageSize) break;
       }

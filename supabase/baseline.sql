@@ -30528,7 +30528,8 @@ create table if not exists public.config_aviso_de_caso (
   -- `restrict`, a exclusão do canal falharia por causa de um aviso. `set null`
   -- desliga (pelo trigger) e deixa a tela explicar.
   channel_session_id  uuid references public.channel_sessions(id) on delete set null,
-  -- E.164, com `+`. É o que a pessoa digita e o que o transporte recebe.
+  -- Telefone E.164, com `+`, ou JID de grupo (`...@g.us`). É o destino que a
+  -- pessoa digita e o que o transporte recebe.
   telefone_destino    text not null,
   -- O JID que o transporte resolveu da última vez. É o que faz o corte da
   -- ingestão funcionar para destinatário em MODO PRIVACIDADE, onde o telefone
@@ -30568,8 +30569,13 @@ alter table public.config_aviso_de_caso
 alter table public.config_aviso_de_caso
   drop constraint if exists config_aviso_de_caso_e164;
 alter table public.config_aviso_de_caso
-  add constraint config_aviso_de_caso_e164
-  check (telefone_destino ~ '^\+[1-9][0-9]{7,14}$');
+  drop constraint if exists config_aviso_de_caso_destino_shape;
+alter table public.config_aviso_de_caso
+  add constraint config_aviso_de_caso_destino_shape
+  check (
+    telefone_destino ~ '^\+[1-9][0-9]{7,14}$'
+    or telefone_destino ~ '^[0-9]{6,}@g\.us$'
+  );
 
 alter table public.config_aviso_de_caso
   drop constraint if exists config_aviso_de_caso_rotulo_curto;
@@ -30743,6 +30749,9 @@ as $$
 declare
   v_antes public.config_aviso_de_caso;
   v_arch timestamptz;
+  v_destino text;
+  v_destino_eh_telefone boolean;
+  v_destino_eh_grupo boolean;
   v_digitos text;
   v_variantes text[];
 begin
@@ -30758,7 +30767,10 @@ begin
   if not public.fn_session_mfa_proven() then
     raise exception 'aviso_de_caso_mfa_required' using errcode = '42501';
   end if;
-  if p_telefone is null or p_telefone !~ '^\+[1-9][0-9]{7,14}$' then
+  v_destino := btrim(p_telefone);
+  v_destino_eh_telefone := v_destino ~ '^\+[1-9][0-9]{7,14}$';
+  v_destino_eh_grupo := v_destino ~ '^[0-9]{6,}@g\.us$';
+  if p_telefone is null or not (v_destino_eh_telefone or v_destino_eh_grupo) then
     raise exception 'aviso_de_caso_telefone_invalido' using errcode = '22023';
   end if;
 
@@ -30775,56 +30787,67 @@ begin
     end if;
   end if;
 
-  -- As duas grafias do nono dígito — a MESMA regra de
-  -- `lib/channels/phone-variants.ts`. Comparar a string crua deixaria passar o
-  -- número do suporte cadastrado com 9 e registrado sem.
-  v_digitos := regexp_replace(p_telefone, '\D', '', 'g');
-  v_variantes := array[v_digitos];
-  if v_digitos like '55%' then
-    if length(v_digitos) = 13
-       and substring(v_digitos from 5 for 1) = '9'
-       and substring(v_digitos from 6 for 1) between '6' and '9' then
-      v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || substring(v_digitos from 6));
-    elsif length(v_digitos) = 12
-       and substring(v_digitos from 5 for 1) between '6' and '9' then
-      v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || '9' || substring(v_digitos from 5));
+  if v_destino_eh_telefone then
+    -- As duas grafias do nono dígito — a MESMA regra de
+    -- `lib/channels/phone-variants.ts`. Comparar a string crua deixaria passar o
+    -- número do suporte cadastrado com 9 e registrado sem.
+    v_digitos := regexp_replace(v_destino, '\D', '', 'g');
+    v_variantes := array[v_digitos];
+    if v_digitos like '55%' then
+      if length(v_digitos) = 13
+         and substring(v_digitos from 5 for 1) = '9'
+         and substring(v_digitos from 6 for 1) between '6' and '9' then
+        v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || substring(v_digitos from 6));
+      elsif length(v_digitos) = 12
+         and substring(v_digitos from 5 for 1) between '6' and '9' then
+        v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || '9' || substring(v_digitos from 5));
+      end if;
     end if;
-  end if;
 
-  -- O NÚMERO DE AVISO NÃO PODE SER UM NÚMERO DA PRÓPRIA ORGANIZAÇÃO. É o laço
-  -- robô-com-robô: a conexão de avisos manda para o número oficial, o agente
-  -- dele responde, e as duas pontas se alimentam sem fim.
-  -- A conexão ARQUIVADA fica FORA da conta. Ela não envia nem recebe, então o
-  -- laço não acontece por ela — e contá-la bloqueia o número PARA SEMPRE, porque
-  -- a conexão que já teve agente publicado não pode ser apagada (as versões a
-  -- seguram) e o número nunca mais poderia receber aviso.
-  if exists (
-       select 1 from public.channel_sessions s
-        where s.organization_id = p_org
-          and s.archived_at is null
-          and s.phone_number is not null
-          and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes)) then
-    raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
-  end if;
+    -- O NÚMERO DE AVISO NÃO PODE SER UM NÚMERO DA PRÓPRIA ORGANIZAÇÃO. É o laço
+    -- robô-com-robô: a conexão de avisos manda para o número oficial, o agente
+    -- dele responde, e as duas pontas se alimentam sem fim.
+    -- A conexão ARQUIVADA fica FORA da conta. Ela não envia nem recebe, então o
+    -- laço não acontece por ela — e contá-la bloqueia o número PARA SEMPRE, porque
+    -- a conexão que já teve agente publicado não pode ser apagada (as versões a
+    -- seguram) e o número nunca mais poderia receber aviso.
+    if exists (
+         select 1 from public.channel_sessions s
+          where s.organization_id = p_org
+            and s.archived_at is null
+            and s.phone_number is not null
+            and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes)) then
+      raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
+    end if;
 
-  -- O número de aviso vira INTERNO: tudo o que chegar dele deixa de virar
-  -- contato, conversa, lead e despacho do agente. Se ele já é um CLIENTE desta
-  -- organização, as mensagens dessa pessoa param de chegar ao CRM — e isso não
-  -- pode acontecer por engano. A tela pergunta e reenvia com `p_confirma_contato`.
-  if not coalesce(p_confirma_contato, false) and exists (
-       select 1 from public.contacts c
-        where c.organization_id = p_org
-          and c.phone_number is not null
-          and regexp_replace(c.phone_number, '\D', '', 'g') = any (v_variantes)) then
-    raise exception 'aviso_de_caso_numero_de_cliente' using errcode = '22023';
+    -- O número de aviso vira INTERNO: tudo o que chegar dele deixa de virar
+    -- contato, conversa, lead e despacho do agente. Se ele já é um CLIENTE desta
+    -- organização, as mensagens dessa pessoa param de chegar ao CRM — e isso não
+    -- pode acontecer por engano. A tela pergunta e reenvia com `p_confirma_contato`.
+    if not coalesce(p_confirma_contato, false) and exists (
+         select 1 from public.contacts c
+          where c.organization_id = p_org
+            and c.phone_number is not null
+            and regexp_replace(c.phone_number, '\D', '', 'g') = any (v_variantes)) then
+      raise exception 'aviso_de_caso_numero_de_cliente' using errcode = '22023';
+    end if;
   end if;
 
   select * into v_antes from public.config_aviso_de_caso where organization_id = p_org;
 
   insert into public.config_aviso_de_caso
-    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, criado_por, atualizado_por)
+    (organization_id, channel_session_id, telefone_destino, destino_jid, rotulo, ligado, criado_por, atualizado_por)
   values
-    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), auth.uid(), auth.uid())
+    (
+      p_org,
+      p_channel,
+      v_destino,
+      case when v_destino_eh_grupo then v_destino else null end,
+      nullif(btrim(p_rotulo), ''),
+      coalesce(p_ligado, false),
+      auth.uid(),
+      auth.uid()
+    )
   on conflict (organization_id) do update
     set channel_session_id = excluded.channel_session_id,
         telefone_destino   = excluded.telefone_destino,
@@ -30837,13 +30860,15 @@ begin
         -- ANTIGO, que pode voltar a ser um cliente.
         destino_jid        = case
                                when excluded.telefone_destino is distinct from config_aviso_de_caso.telefone_destino
-                               then null
+                               then excluded.destino_jid
+                               when excluded.destino_jid is not null
+                               then coalesce(config_aviso_de_caso.destino_jid, excluded.destino_jid)
                                else config_aviso_de_caso.destino_jid
                              end,
         updated_at         = now();
 
   return jsonb_build_object(
-    'trocou_numero', (v_antes.telefone_destino is distinct from p_telefone),
+    'trocou_numero', (v_antes.telefone_destino is distinct from v_destino),
     'antes_ligado',  coalesce(v_antes.ligado, false)
   );
 end;
@@ -38539,31 +38564,38 @@ end; $$;
 revoke all on function public.fn_service_event_origin(uuid,uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_service_event_origin(uuid,uuid,uuid,uuid) to service_role;
 
-update public.event_log e
-   set payload = coalesce(e.payload, '{}'::jsonb)
-       || jsonb_build_object(
-            'service_origin',
-            jsonb_build_object(
-              'kind', 'command',
-              'observed', public.fn_service_observe_command(e.organization_id, coalesce(d.contact_id,l.contact_id))
-            )
-          )
-  from public.zapsign_documents d
-  left join public.crm_leads l
-    on l.organization_id=d.organization_id and l.id=d.lead_id
- where e.organization_id=d.organization_id
-   and e.entity_id=d.id
-   and e.event_type='zapsign.document_signed'
-   and e.entity_kind='zapsign_document'
-   and not (coalesce(e.payload, '{}'::jsonb) ? 'service_origin')
-   and coalesce(d.contact_id,l.contact_id) is not null
-   and exists (
-     select 1 from public.contacts c
-      where c.organization_id=e.organization_id
-        and c.id=coalesce(d.contact_id,l.contact_id)
-        and not c.is_anonymized
-        and c.is_merged_into is null
-   );
+do $$
+begin
+  if to_regclass('public.zapsign_documents') is not null then
+    execute $sql$
+      update public.event_log e
+         set payload = coalesce(e.payload, '{}'::jsonb)
+             || jsonb_build_object(
+                  'service_origin',
+                  jsonb_build_object(
+                    'kind', 'command',
+                    'observed', public.fn_service_observe_command(e.organization_id, coalesce(d.contact_id,l.contact_id))
+                  )
+                )
+        from public.zapsign_documents d
+        left join public.crm_leads l
+          on l.organization_id=d.organization_id and l.id=d.lead_id
+       where e.organization_id=d.organization_id
+         and e.entity_id=d.id
+         and e.event_type='zapsign.document_signed'
+         and e.entity_kind='zapsign_document'
+         and not (coalesce(e.payload, '{}'::jsonb) ? 'service_origin')
+         and coalesce(d.contact_id,l.contact_id) is not null
+         and exists (
+           select 1 from public.contacts c
+            where c.organization_id=e.organization_id
+              and c.id=coalesce(d.contact_id,l.contact_id)
+              and not c.is_anonymized
+              and c.is_merged_into is null
+         )
+    $sql$;
+  end if;
+end $$;
 -- ---- birthdate na fila de proposta (migration 0412, issue #1546) ----
 -- NADA DE DDL AQUI, e a razão é a cerca `baseline-constraint-reconstruida`:
 -- `contact_field_proposals_campo_check` já tem o seu bloco ÚNICO, e foi ele que
@@ -41948,5 +41980,251 @@ revoke all on public.platform_instance_alert_settings   from anon, authenticated
 revoke all on public.platform_instance_alert_deliveries from anon, authenticated;
 grant select, insert, update on public.platform_instance_alert_settings   to service_role;
 grant select, insert, update on public.platform_instance_alert_deliveries to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================================
+-- 0452 — Historico das analises do diagnostico comercial.
+-- ============================================================================
+
+create table if not exists public.commercial_diagnosis_reports (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  from_at timestamptz not null,
+  to_at timestamptz not null,
+  period_days integer not null,
+  analysis jsonb not null,
+  prompt jsonb,
+  llm_call_id uuid references public.llm_calls(id) on delete set null,
+  provider text not null,
+  model text not null,
+  cost_cents numeric,
+  input_tokens integer not null default 0,
+  output_tokens integer not null default 0,
+  latency_ms integer not null default 0,
+  created_at timestamptz not null default now(),
+  constraint commercial_diagnosis_reports_window_order
+    check (from_at < to_at),
+  constraint commercial_diagnosis_reports_period_days
+    check (period_days > 0 and period_days <= 90),
+  constraint commercial_diagnosis_reports_json_shape
+    check (
+      jsonb_typeof(analysis) = 'object'
+      and (prompt is null or jsonb_typeof(prompt) = 'object')
+    ),
+  constraint commercial_diagnosis_reports_usage_nonnegative
+    check (
+      (cost_cents is null or cost_cents >= 0)
+      and input_tokens >= 0
+      and output_tokens >= 0
+      and latency_ms >= 0
+    )
+);
+
+comment on table public.commercial_diagnosis_reports is
+  'Historico das analises com IA do diagnostico comercial. Guarda agregados, prompt, custo e resultado, sem corpo de mensagens.';
+comment on column public.commercial_diagnosis_reports.analysis is
+  'Payload validado pela aplicacao para reabrir a analise e gerar PDF sem chamar IA novamente.';
+comment on column public.commercial_diagnosis_reports.prompt is
+  'Prompt enviado ao modelo na geracao do relatorio; duplicado fora de analysis para auditoria e evolucao futura.';
+
+create index if not exists commercial_diagnosis_reports_org_created_idx
+  on public.commercial_diagnosis_reports (organization_id, created_at desc);
+create index if not exists commercial_diagnosis_reports_org_window_idx
+  on public.commercial_diagnosis_reports (organization_id, from_at desc, to_at desc);
+create index if not exists commercial_diagnosis_reports_llm_call_idx
+  on public.commercial_diagnosis_reports (llm_call_id)
+  where llm_call_id is not null;
+
+alter table public.commercial_diagnosis_reports enable row level security;
+
+drop policy if exists commercial_diagnosis_reports_select on public.commercial_diagnosis_reports;
+create policy commercial_diagnosis_reports_select on public.commercial_diagnosis_reports
+  for select
+  using (
+    public.fn_is_platform_admin()
+    or (
+      organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'manager')
+    )
+  );
+
+revoke all on public.commercial_diagnosis_reports from anon, authenticated;
+grant select on public.commercial_diagnosis_reports to authenticated;
+grant select, insert, update, delete on public.commercial_diagnosis_reports to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================================
+-- 0453 — Acesso da IA por campanhas/origem rastreada.
+-- ============================================================================
+
+create or replace function public.fn_configurar_pre_go_live_canal(
+  p_org uuid,
+  p_canal uuid,
+  p_modo text,
+  p_numeros text[]
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_linhas integer;
+  v_gate text;
+begin
+  if p_modo is null or p_modo not in ('open', 'allowlist', 'pre_go_live') then
+    raise exception 'modo de acesso da IA inválido' using errcode = '22023';
+  end if;
+
+  if p_numeros is null or exists (
+    select 1
+      from unnest(p_numeros) as n(numero)
+     where numero is null or numero !~ '^\+[1-9][0-9]{7,14}$'
+  ) then
+    raise exception 'lista de telefones de teste inválida' using errcode = '22023';
+  end if;
+
+  v_gate := case when p_modo in ('allowlist', 'pre_go_live') then 'allowlist' else 'open' end;
+
+  update public.channel_sessions
+     set metadata = jsonb_set(
+       jsonb_set(
+         jsonb_set(coalesce(metadata, '{}'::jsonb), '{ai_gate}', to_jsonb(v_gate), true),
+         '{ai_gate_mode}', to_jsonb(p_modo), true
+       ),
+       '{ai_test_phone_numbers}', to_jsonb(p_numeros), true
+     )
+   where organization_id = p_org
+     and id = p_canal
+     and archived_at is null;
+
+  get diagnostics v_linhas = row_count;
+  return v_linhas;
+end;
+$$;
+
+revoke execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[])
+  from public, anon, authenticated;
+grant execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[])
+  to service_role;
+
+create or replace function public.fn_configurar_pre_go_live_canal(
+  p_org uuid,
+  p_canal uuid,
+  p_modo text,
+  p_numeros text[],
+  p_frases_campanha text[]
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_linhas integer;
+  v_gate text;
+begin
+  if p_modo is null or p_modo not in ('open', 'allowlist', 'pre_go_live') then
+    raise exception 'modo de acesso da IA inválido' using errcode = '22023';
+  end if;
+
+  if p_numeros is null or exists (
+    select 1
+      from unnest(p_numeros) as n(numero)
+     where numero is null or numero !~ '^\+[1-9][0-9]{7,14}$'
+  ) then
+    raise exception 'lista de telefones de teste inválida' using errcode = '22023';
+  end if;
+
+  if p_frases_campanha is null
+     or coalesce(array_length(p_frases_campanha, 1), 0) > 50
+     or exists (
+       select 1
+         from unnest(p_frases_campanha) as f(frase)
+        where frase is null
+           or char_length(btrim(regexp_replace(frase, '[[:space:]]+', ' ', 'g'))) not between 3 and 400
+     ) then
+    raise exception 'lista de frases de campanha inválida' using errcode = '22023';
+  end if;
+
+  v_gate := case when p_modo in ('allowlist', 'pre_go_live') then 'allowlist' else 'open' end;
+
+  update public.channel_sessions
+     set metadata = jsonb_set(
+       jsonb_set(
+         jsonb_set(coalesce(metadata, '{}'::jsonb), '{ai_gate}', to_jsonb(v_gate), true),
+         '{ai_gate_mode}', to_jsonb(p_modo), true
+       ),
+       '{ai_test_phone_numbers}', to_jsonb(p_numeros), true
+     )
+   where organization_id = p_org
+     and id = p_canal
+     and archived_at is null;
+
+  get diagnostics v_linhas = row_count;
+  if v_linhas <> 1 then
+    return v_linhas;
+  end if;
+
+  with frases_limpas as (
+    select distinct on (chave) ordem, limpa
+      from (
+        select
+          ordem,
+          btrim(regexp_replace(frase, '[[:space:]]+', ' ', 'g')) as limpa,
+          lower(btrim(regexp_replace(frase, '[[:space:]]+', ' ', 'g'))) as chave
+        from unnest(p_frases_campanha) with ordinality as f(frase, ordem)
+      ) f
+     order by chave, ordem
+  ),
+  frases_numeradas as (
+    select row_number() over (order by ordem) as pos, limpa
+      from frases_limpas
+  )
+  update public.organizations as o
+     set settings = (
+       case when jsonb_typeof(o.settings) = 'object' then o.settings else '{}'::jsonb end
+     ) || jsonb_build_object(
+       'campanhas_whatsapp',
+       (
+         select coalesce(jsonb_agg(item), '[]'::jsonb)
+           from jsonb_array_elements(
+             case
+               when jsonb_typeof(o.settings->'campanhas_whatsapp') = 'array'
+                 then o.settings->'campanhas_whatsapp'
+               else '[]'::jsonb
+             end
+           ) as antigos(item)
+          where item->>'channel_session_id' is distinct from p_canal::text
+       ) ||
+       (
+         select coalesce(
+           jsonb_agg(
+             jsonb_build_object(
+               'id', 'canal-' || left(replace(p_canal::text, '-', ''), 12) || '-' || pos::text,
+               'label', 'Frase ' || pos::text,
+               'match', jsonb_build_object('tipo', 'starts_with', 'valor', limpa),
+               'channel_session_id', p_canal::text
+             )
+             order by pos
+           ),
+           '[]'::jsonb
+         )
+         from frases_numeradas
+       )
+     )
+   where o.id = p_org;
+
+  return v_linhas;
+end;
+$$;
+
+revoke execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[], text[])
+  from public, anon, authenticated;
+grant execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[], text[])
+  to service_role;
 
 notify pgrst, 'reload schema';

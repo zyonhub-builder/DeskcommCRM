@@ -65,10 +65,7 @@ export type DesfechoDoCanal =
  * Por que o aviso deixou de valer. O motivo entra no registro da resolução: sem
  * ele, "o operador resolveu" e "o sistema viu que acabou" ficam iguais.
  */
-export type MotivoDaResolucao =
-  | "ganhou_numero"
-  | "saiu_do_modo_de_teste"
-  | "canal_arquivado";
+export type MotivoDaResolucao = "ganhou_numero" | "saiu_do_modo_de_teste" | "canal_arquivado";
 
 /** Os números de teste autorizados, tolerando metadata malformada. */
 export function numerosAutorizados(metadata: Record<string, unknown> | null): string[] {
@@ -77,9 +74,9 @@ export function numerosAutorizados(metadata: Record<string, unknown> | null): st
   return bruto.filter((n): n is string => typeof n === "string" && n.trim() !== "");
 }
 
-/** O canal está no modo de teste? É o `ai_gate` que decide, como no runtime. */
+/** O canal está no modo de teste? `allowlist` comum é campanha/origem, não teste. */
 export function emModoDeTeste(metadata: Record<string, unknown> | null): boolean {
-  return metadata?.["ai_gate"] === "allowlist";
+  return metadata?.["ai_gate"] === "allowlist" && metadata?.["ai_gate_mode"] === "pre_go_live";
 }
 
 /**
@@ -92,8 +89,7 @@ export function emModoDeTeste(metadata: Record<string, unknown> | null): boolean
  */
 export function avaliarCanal(canal: CanalParaAvaliar, agora: Date): DesfechoDoCanal {
   if (canal.archived_at !== null) return { acao: "resolver", motivo: "canal_arquivado" };
-  if (!emModoDeTeste(canal.metadata))
-    return { acao: "resolver", motivo: "saiu_do_modo_de_teste" };
+  if (!emModoDeTeste(canal.metadata)) return { acao: "resolver", motivo: "saiu_do_modo_de_teste" };
   if (numerosAutorizados(canal.metadata).length > 0)
     return { acao: "resolver", motivo: "ganhou_numero" };
   if (canal.status !== "WORKING") return { acao: "aguardar" };

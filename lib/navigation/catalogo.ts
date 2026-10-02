@@ -507,6 +507,14 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
+    href: "/app/ai/testes",
+    label: "Testar agentes",
+    description: "Converse com os agentes publicados sem abrir o editor de configuração.",
+    icon: "PaperPlaneTilt",
+    group: "ia",
+    section: "Acompanhar o agente",
+  },
+  {
     href: "/app/ai/cases",
     label: "Casos",
     description: "Os atendimentos que o agente conduziu, do início ao desfecho.",
@@ -690,6 +698,15 @@ export const NAV_CATALOG = [
     group: "analise",
     section: "Os números do período",
     sidebar: true,
+  },
+  {
+    href: "/app/analise/diagnostico-comercial",
+    label: "Diagnóstico comercial",
+    description: "Separe origem, atendimento, funil e custo antes de culpar o lead ou o comercial.",
+    icon: "ChartLineUp",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
   },
   {
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá

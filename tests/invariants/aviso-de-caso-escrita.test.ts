@@ -180,10 +180,7 @@ describe("0292 — a configuração do aviso é lida por quem administra", () =>
     // isolamento de tabela vazia.
     expect(contaComoMembro(ADMIN_B, CONFIGS_VISIVEIS)).toBe(1);
     expect(
-      contaComoMembro(
-        ADMIN_B,
-        `${CONFIGS_VISIVEIS} where organization_id = '${ORG_A}'`,
-      ),
+      contaComoMembro(ADMIN_B, `${CONFIGS_VISIVEIS} where organization_id = '${ORG_A}'`),
       "o admin do vizinho leu o número de aviso de outra empresa",
     ).toBe(0);
   });
@@ -285,6 +282,19 @@ describe("0292 — fn_definir_aviso_de_caso é a única porta, e ela confere o p
     expect(saida).toContain("trocou_numero");
   });
 
+  it("destino de grupo é aceito e grava o JID imediatamente", () => {
+    const grupo = "120363412080714368@g.us";
+    const saida = sql(
+      `${comoMembro(ADMIN_A)}\nselect public.fn_definir_aviso_de_caso('${ORG_A}', '${SESSAO_A}', '${grupo}', 'Grupo do plantão', true, false);`,
+    );
+    expect(saida).toContain("trocou_numero");
+    expect(
+      valor(
+        `select telefone_destino || '|' || coalesce(destino_jid, '') || '|' || ligado::text from public.config_aviso_de_caso where organization_id = '${ORG_A}'`,
+      ),
+    ).toBe(`${grupo}|${grupo}|true`);
+  });
+
   it("o admin de OUTRA organização é recusado", () => {
     let erro = "";
     try {
@@ -313,7 +323,9 @@ describe("0292 — fn_definir_aviso_de_caso é a única porta, e ela confere o p
   });
 
   it("número da PRÓPRIA organização é recusado — é o laço robô-com-robô", () => {
-    sql(`update public.channel_sessions set phone_number = '+5531955554444' where id = '${SESSAO_A}';`);
+    sql(
+      `update public.channel_sessions set phone_number = '+5531955554444' where id = '${SESSAO_A}';`,
+    );
     let erro = "";
     try {
       sql(
@@ -331,7 +343,9 @@ describe("0292 — fn_definir_aviso_de_caso é a única porta, e ela confere o p
     // robô-com-robô que a checagem evita, e é o controle positivo deste caso.
     // Sem ele, "a arquivada passou" também seria satisfeito por uma checagem
     // que tivesse sido simplesmente apagada.
-    sql(`update public.channel_sessions set phone_number = '+5531966665555' where id = '${SESSAO_A}';`);
+    sql(
+      `update public.channel_sessions set phone_number = '+5531966665555' where id = '${SESSAO_A}';`,
+    );
     let ativa = "";
     try {
       sql(
@@ -424,7 +438,9 @@ describe("0292 — B4: apagar a conexão apontada NÃO pode falhar", () => {
        where organization_id = '${ORG_A}';
     `);
     expect(
-      booleano(`select ligado::text from public.config_aviso_de_caso where organization_id = '${ORG_A}'`),
+      booleano(
+        `select ligado::text from public.config_aviso_de_caso where organization_id = '${ORG_A}'`,
+      ),
       "a semente não ficou ligada — o caso mediria o estado errado",
     ).toBe(true);
 
@@ -440,10 +456,14 @@ describe("0292 — B4: apagar a conexão apontada NÃO pode falhar", () => {
     expect(erro, "apagar a conexão falhou por causa da configuração de aviso").toBe("");
 
     expect(
-      booleano(`select channel_session_id is null from public.config_aviso_de_caso where organization_id = '${ORG_A}'`),
+      booleano(
+        `select channel_session_id is null from public.config_aviso_de_caso where organization_id = '${ORG_A}'`,
+      ),
     ).toBe(true);
     expect(
-      booleano(`select ligado::text from public.config_aviso_de_caso where organization_id = '${ORG_A}'`),
+      booleano(
+        `select ligado::text from public.config_aviso_de_caso where organization_id = '${ORG_A}'`,
+      ),
       "o aviso ficou LIGADO sem canal — uma configuração que a tela mostra ativa e que nunca dispara",
     ).toBe(false);
   });
@@ -460,11 +480,13 @@ describe("0292 — as duas funções do servidor não são alcançáveis por que
       // do baseline (que `revoke from public` não remove) e o grant implícito a
       // PUBLIC que o Postgres dá ao criar a função (que `revoke from anon` não
       // remove). Fechar uma só deixa a função exposta com o gate verde.
-      expect(booleano(`select has_function_privilege('anon', '${assinatura}', 'EXECUTE')::text`)).toBe(
-        false,
-      );
       expect(
-        booleano(`select has_function_privilege('authenticated', '${assinatura}', 'EXECUTE')::text`),
+        booleano(`select has_function_privilege('anon', '${assinatura}', 'EXECUTE')::text`),
+      ).toBe(false);
+      expect(
+        booleano(
+          `select has_function_privilege('authenticated', '${assinatura}', 'EXECUTE')::text`,
+        ),
       ).toBe(false);
     });
   }

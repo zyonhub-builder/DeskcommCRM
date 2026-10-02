@@ -7,7 +7,8 @@
  * tela dizendo "salvo".
  *
  * A proteção é estrutural: ele mora em `PROVEDORES_DE_DECISAO`, lista IRMÃ de
- * `PROVEDORES`, e toda superfície de conversa deriva de `PROVEDORES`. Este
+ * `PROVEDORES`, do mesmo jeito que provedores só de áudio moram fora da lista
+ * de conversa. Toda superfície de conversa deriva de `PROVEDORES`. Este
  * arquivo prova as duas metades:
  *
  *  1. pelo COMPORTAMENTO — cada porta de conversa recusa `typesafe`;
@@ -27,8 +28,10 @@ import {
   ehProvedorSuportado,
   IDS_COM_CHAVE,
   IDS_DE_PROVEDOR,
+  IDS_DE_PROVEDOR_DE_AUDIO,
   IDS_DE_PROVEDOR_DE_DECISAO,
   PROVEDORES,
+  PROVEDORES_DE_AUDIO,
   PROVEDORES_DE_DECISAO,
 } from "@/lib/ai/pontos/provedores";
 import { buildModel } from "@/lib/ai/runtime/agent";
@@ -47,13 +50,16 @@ vi.mock("@/lib/auth/require-role", () => ({
 // Agente não encontrado: o corpo que PASSA pela validação chega aqui e volta 404.
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
-    const chain: Record<string, unknown> = { maybeSingle: async () => ({ data: null, error: null }) };
+    const chain: Record<string, unknown> = {
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
     for (const m of ["from", "select", "eq"]) chain[m] = () => chain;
     return chain;
   },
 }));
 
 const DECISAO = PROVEDORES_DE_DECISAO.map((p) => p.id);
+const AUDIO = PROVEDORES_DE_AUDIO.map((p) => p.id);
 
 function reconciliar(provider: string) {
   return reconciliarAgente(
@@ -80,14 +86,17 @@ describe("o Jev está declarado como provedor de decisão (controle positivo)", 
     expect(ehProvedorDeDecisao("anthropic")).toBe(false);
   });
 
-  it("a união é exatamente as duas listas, sem sobreposição", () => {
+  it("a união é exatamente as listas de chave, sem sobreposição", () => {
     const linguagem = PROVEDORES.map((p) => p.id as string);
     expect(DECISAO.filter((id) => linguagem.includes(id))).toEqual([]);
-    expect([...IDS_COM_CHAVE].sort()).toEqual([...linguagem, ...DECISAO].sort());
+    expect(AUDIO.filter((id) => linguagem.includes(id))).toEqual([]);
+    expect(AUDIO.filter((id) => (DECISAO as readonly string[]).includes(id))).toEqual([]);
+    expect([...IDS_DE_PROVEDOR_DE_AUDIO].sort()).toEqual([...AUDIO].sort());
+    expect([...IDS_COM_CHAVE].sort()).toEqual([...linguagem, ...DECISAO, ...AUDIO].sort());
   });
 });
 
-describe.each(DECISAO)("%s nunca é modelo de conversa", (id) => {
+describe.each([...DECISAO, ...AUDIO])("%s nunca é modelo de conversa", (id) => {
   it("não está na lista de quem conversa", () => {
     expect(PROVEDORES.map((p) => p.id as string)).not.toContain(id);
     expect([...IDS_DE_PROVEDOR] as string[]).not.toContain(id);
@@ -125,7 +134,7 @@ describe.each(DECISAO)("%s nunca é modelo de conversa", (id) => {
 
 describe("só as superfícies de CHAVE pedem a união", () => {
   const SIMBOLOS_DA_UNIAO =
-    /\b(PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO|ProvedorComChave|ehProvedorDeDecisao)\b/;
+    /\b(PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO|PROVEDORES_DE_AUDIO|IDS_DE_PROVEDOR_DE_AUDIO|ProvedorComChave|ehProvedorDeDecisao|ehProvedorDeAudio)\b/;
 
   /**
    * Cada linha é uma decisão escrita: este arquivo lida com CHAVE (cadastrar,
@@ -175,7 +184,7 @@ describe("só as superfícies de CHAVE pedem a união", () => {
     // Três formas: `type X = …`, `export const X = <lista>` (apelido de VALOR,
     // que um arquivo declarado reexportaria) e `<símbolo> as X`.
     const APELIDO =
-      /\btype\s+\w+(?:<[^>]*>)?\s*=[^;]*\b(?:ProvedorComChave|PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO)\b|\bexport\s+(?:const|let)\s+\w+\s*(?::[^=]+)?=\s*(?:PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO)\b|\b(?:ProvedorComChave|PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO)\s+as\s+\w+/;
+      /\btype\s+\w+(?:<[^>]*>)?\s*=[^;]*\b(?:ProvedorComChave|PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO|PROVEDORES_DE_AUDIO|IDS_DE_PROVEDOR_DE_AUDIO)\b|\bexport\s+(?:const|let)\s+\w+\s*(?::[^=]+)?=\s*(?:PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO|PROVEDORES_DE_AUDIO|IDS_DE_PROVEDOR_DE_AUDIO)\b|\b(?:ProvedorComChave|PROVEDORES_COM_CHAVE|IDS_COM_CHAVE|PROVEDORES_DE_DECISAO|IDS_DE_PROVEDOR_DE_DECISAO|PROVEDORES_DE_AUDIO|IDS_DE_PROVEDOR_DE_AUDIO)\s+as\s+\w+/;
     // Controle: a régua pega as três formas, e não o `const` local de um card.
     for (const apelido of [
       "export type Provider = ProvedorComChave;",
@@ -184,7 +193,9 @@ describe("só as superfícies de CHAVE pedem a união", () => {
     ]) {
       expect(APELIDO.test(apelido), apelido).toBe(true);
     }
-    expect(APELIDO.test("const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === x);")).toBe(false);
+    expect(APELIDO.test("const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === x);")).toBe(
+      false,
+    );
     const apelidam = usam.filter(
       (c) => c !== "lib/ai/pontos/provedores.ts" && APELIDO.test(readFileSync(c, "utf8")),
     );

@@ -47,6 +47,7 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";
 const CANAL = "33333333-3333-4333-8333-333333333333";
 const TELEFONE = "+5531998966398";
+const GRUPO = "120363412080714368@g.us";
 
 const ESTADO_VAZIO = {
   config: null,
@@ -156,7 +157,7 @@ describe("PUT — salvar a configuração", () => {
 
   it("recusa corpo inválido antes de tocar o banco", async () => {
     const { rpc } = clienteDeSessao({});
-    const r = await PUT(put({ ...CORPO_OK, telefone: "31998966398" }));
+    const r = await PUT(put({ ...CORPO_OK, telefone: "120363412080714368" }));
     expect(r.status).toBe(422);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -176,6 +177,22 @@ describe("PUT — salvar a configuração", () => {
     );
   });
 
+  it("aceita JID de grupo como destino", async () => {
+    const { rpc } = clienteDeSessao({});
+    await PUT(
+      put({ ...CORPO_OK, telefone: ` ${GRUPO.toUpperCase()} `, rotulo: "Grupo do plantão" }),
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "fn_definir_aviso_de_caso",
+      expect.objectContaining({
+        p_org: ORG,
+        p_channel: CANAL,
+        p_telefone: GRUPO,
+        p_ligado: true,
+      }),
+    );
+  });
+
   it("a auditoria leva o número MASCARADO, e nunca o telefone inteiro", async () => {
     clienteDeSessao({ rpc: { data: { trocou_numero: true, antes_ligado: false }, error: null } });
     await PUT(put(CORPO_OK));
@@ -186,10 +203,25 @@ describe("PUT — salvar a configuração", () => {
     };
     expect(entrada.action).toBe("ai.case_alert_settings_changed");
     expect(entrada.metadata.destino_mascarado).toBe("••••6398");
-    expect(entrada.metadata).toMatchObject({ trocou_numero: true, antes_ligado: false, depois_ligado: true });
+    expect(entrada.metadata).toMatchObject({
+      trocou_numero: true,
+      antes_ligado: false,
+      depois_ligado: true,
+    });
     // `api_audit_log` é append-only e a cascata de LGPD não o alcança: o que
     // entra ali fica para sempre.
     expect(JSON.stringify(entrada.metadata)).not.toContain("998966398");
+  });
+
+  it("a auditoria mascara destino de grupo como grupo, sem guardar o ID inteiro", async () => {
+    clienteDeSessao({ rpc: { data: { trocou_numero: true, antes_ligado: false }, error: null } });
+    await PUT(put({ ...CORPO_OK, telefone: GRUPO }));
+
+    const entrada = vi.mocked(audit).mock.calls[0]![0] as {
+      metadata: Record<string, unknown>;
+    };
+    expect(entrada.metadata.destino_mascarado).toBe("grupo ••••4368");
+    expect(JSON.stringify(entrada.metadata)).not.toContain("120363412080714368");
   });
 
   it("o número que já é de um cliente vira PERGUNTA, com código próprio", async () => {
@@ -240,7 +272,8 @@ describe("PUT — salvar a configuração", () => {
 });
 
 describe("POST /teste — o botão que manda de verdade", () => {
-  const req = () => new NextRequest("http://localhost/api/v1/ai/cases/alerta/teste", { method: "POST" });
+  const req = () =>
+    new NextRequest("http://localhost/api/v1/ai/cases/alerta/teste", { method: "POST" });
 
   it("exige admin", async () => {
     sessao("manager");
@@ -262,7 +295,9 @@ describe("POST /teste — o botão que manda de verdade", () => {
     clienteDeSessao({ config: null });
     const r = await TESTE(req());
     expect(r.status).toBe(422);
-    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("aviso_nao_configurado");
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe(
+      "aviso_nao_configurado",
+    );
     expect(enviarAvisoDeTeste).not.toHaveBeenCalled();
   });
 
@@ -278,6 +313,21 @@ describe("POST /teste — o botão que manda de verdade", () => {
       organizationId: ORG,
       channelSessionId: CANAL,
       telefone: TELEFONE,
+    });
+  });
+
+  it("usa o grupo salvo como destino do teste", async () => {
+    clienteDeSessao({ config: { channel_session_id: CANAL, telefone_destino: GRUPO } });
+    vi.mocked(enviarAvisoDeTeste).mockResolvedValue({
+      enviado: true,
+      destinoMascarado: "grupo ••••4368",
+      externalId: null,
+    });
+    await TESTE(req());
+    expect(vi.mocked(enviarAvisoDeTeste).mock.calls[0]![1]).toEqual({
+      organizationId: ORG,
+      channelSessionId: CANAL,
+      telefone: GRUPO,
     });
   });
 
@@ -298,7 +348,10 @@ describe("POST /teste — o botão que manda de verdade", () => {
 
   it("audita nos DOIS desfechos, com o número mascarado e o motivo", async () => {
     clienteDeSessao({ config: { channel_session_id: CANAL, telefone_destino: TELEFONE } });
-    vi.mocked(enviarAvisoDeTeste).mockResolvedValue({ enviado: false, codigo: "canal_desconectado" });
+    vi.mocked(enviarAvisoDeTeste).mockResolvedValue({
+      enviado: false,
+      codigo: "canal_desconectado",
+    });
     await TESTE(req());
     const entrada = vi.mocked(audit).mock.calls[0]![0] as {
       action: string;

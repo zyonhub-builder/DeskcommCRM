@@ -300,6 +300,11 @@ export const AUDIT_ACTIONS = [
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",
+  // Leitura executiva gerada sob demanda no Diagnóstico comercial. A abertura
+  // da tela continua sem custo; esta linha responde quem pediu a chamada paga,
+  // em qual janela e com qual custo registrado em `llm_calls`.
+  "metrics.diagnostico_comercial_ai_generated",
+  "metrics.diagnostico_comercial_pdf_downloaded",
   // O invariante 4 deixando de ser só leitura: quem marcou o próximo passo de
   // uma demanda, e qual. Sem isto, a única mutação que fecha o vazamento seria
   // a única sem rastro.

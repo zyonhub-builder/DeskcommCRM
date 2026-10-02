@@ -86,19 +86,34 @@ describe("ehOChatDoAviso — a regra pura", () => {
     // resposta de quem está em modo privacidade passa. É por isso que o handler
     // grava `destino_jid` no sucesso do envio, e não em outro momento.
     expect(
-      ehOChatDoAviso({ kind: "lid", phone: null, lid: "224466" }, { destino: "+5531998966398", jid: null }),
+      ehOChatDoAviso(
+        { kind: "lid", phone: null, lid: "224466" },
+        { destino: "+5531998966398", jid: null },
+      ),
     ).toBe(false);
   });
 
   it("sem configuração nenhuma, nada casa", () => {
-    expect(ehOChatDoAviso({ kind: "phone", phone: "+5531998966398", lid: null }, { destino: null, jid: null })).toBe(
-      false,
-    );
+    expect(
+      ehOChatDoAviso(
+        { kind: "phone", phone: "+5531998966398", lid: null },
+        { destino: null, jid: null },
+      ),
+    ).toBe(false);
   });
 
   it("grupo e formato desconhecido nunca casam", () => {
     expect(ehOChatDoAviso({ kind: "group", phone: null, lid: null }, cfg)).toBe(false);
     expect(ehOChatDoAviso({ kind: "unknown", phone: null, lid: null }, cfg)).toBe(false);
+  });
+
+  it("destino de grupo não é tratado como telefone interno", () => {
+    expect(
+      ehOChatDoAviso(
+        { kind: "phone", phone: "+120363412080714368", lid: null },
+        { destino: "120363412080714368@g.us", jid: "120363412080714368@g.us" },
+      ),
+    ).toBe(false);
   });
 });
 
@@ -110,17 +125,17 @@ describe("lerNumeroInternoDeAviso — a leitura quente", () => {
     const { db } = fakeDb({ telefone_destino: "+5531998966398", destino_jid: null, ligado: false });
     const cfg = await lerNumeroInternoDeAviso(db, ORG);
     expect(cfg.destino).toBe("+5531998966398");
-    expect(await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null })).toBe(
-      true,
-    );
+    expect(
+      await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null }),
+    ).toBe(true);
   });
 
   it("organização sem configuração devolve vazio e não casa nada", async () => {
     const { db } = fakeDb(null);
     expect(await lerNumeroInternoDeAviso(db, ORG)).toEqual({ destino: null, jid: null });
-    expect(await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null })).toBe(
-      false,
-    );
+    expect(
+      await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null }),
+    ).toBe(false);
   });
 
   it("a segunda leitura no mesmo instante NÃO vai ao banco", async () => {
@@ -164,8 +179,8 @@ describe("lerNumeroInternoDeAviso — a leitura quente", () => {
       maybeSingle: async () => ({ data: null, error: { message: "boom" } }),
     };
     const db = { from: () => builder } as unknown as SupabaseClient;
-    expect(await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null })).toBe(
-      false,
-    );
+    expect(
+      await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null }),
+    ).toBe(false);
   });
 });

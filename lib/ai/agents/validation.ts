@@ -268,12 +268,32 @@ export const publishSchema = z.object({ version_id: UUID }).strict();
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
+    sample_messages: z
+      .array(
+        z
+          .object({
+            direction: z.enum(["inbound", "outbound"]),
+            body: z.string().trim().min(1).max(4000),
+            sent_at: z.string().datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(40)
+      .optional()
+      .refine(
+        (messages) =>
+          messages === undefined ||
+          messages.reduce((total, message) => total + message.body.length, 0) <= 12_000,
+        { message: "Histórico de teste muito longo." },
+      ),
     sample_contact: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),
         phone: z.string().trim().min(3).max(40).optional(),
       })
       .optional(),
+    skip_checkpoint: z.boolean().optional().default(false),
   })
   .strict();
 

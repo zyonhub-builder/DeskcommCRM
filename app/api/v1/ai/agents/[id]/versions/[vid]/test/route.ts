@@ -1,6 +1,6 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * POST /api/v1/ai/agents/:id/versions/:vid/test (admin)
+ * POST /api/v1/ai/agents/:id/versions/:vid/test (viewer+)
  *
  * Spec 10 §4.4. Cria ai_agent_runs com is_dry_run=true e executa o runtime
  * real. ⚠️ Não é mais `callInternalRuntime` → `runAgent`, como esta linha
@@ -31,6 +31,7 @@ import { type NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "ids inválidos.", 400, { requestId });
   }
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await requireRole("viewer", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: version } = await admin
     .from("ai_agent_versions")
     .select(
-      "id, agent_id, organization_id, system_prompt, provider, model, channel_session_id, max_steps, token_budget, cost_budget_cents, tool_ids",
+      "id, agent_id, organization_id, status, system_prompt, provider, model, channel_session_id, max_steps, token_budget, cost_budget_cents, tool_ids",
     )
     .eq("id", vid)
     .eq("organization_id", activeOrg.orgId)
@@ -121,6 +122,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .maybeSingle();
 
   if (!version) return fail("not_found", t("Version não encontrada."), 404, { requestId });
+  if (version.status !== "published" && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+    return fail("forbidden_role", t("Esta versão ainda não está publicada."), 403, {
+      requestId,
+    });
+  }
 
   const startedAt = new Date();
 
@@ -155,8 +161,10 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       versionId: vid,
       runId: runRow.id,
       sampleMessage: parsed.data.sample_message,
+      sampleMessages: parsed.data.sample_messages,
       sampleContact: parsed.data.sample_contact,
       channelId: version.channel_session_id,
+      skipCheckpoint: parsed.data.skip_checkpoint,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
     resultPayload = {

@@ -21,8 +21,7 @@ import {
  */
 
 const AGORA = new Date("2026-09-19T12:00:00.000Z");
-const haDias = (n: number): string =>
-  new Date(AGORA.getTime() - n * 86_400_000).toISOString();
+const haDias = (n: number): string => new Date(AGORA.getTime() - n * 86_400_000).toISOString();
 
 function canal(over: Partial<CanalParaAvaliar> = {}): CanalParaAvaliar {
   return {
@@ -31,7 +30,7 @@ function canal(over: Partial<CanalParaAvaliar> = {}): CanalParaAvaliar {
     status: "WORKING",
     archived_at: null,
     last_status_change_at: haDias(DIAS_ATE_AVISAR + 1),
-    metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
+    metadata: { ai_gate: "allowlist", ai_gate_mode: "pre_go_live", ai_test_phone_numbers: [] },
     ...over,
   };
 }
@@ -53,9 +52,9 @@ describe("quando o canal mudo vira aviso", () => {
   });
 
   it("no dia exato do limite já avisa", () => {
-    expect(avaliarCanal(canal({ last_status_change_at: haDias(DIAS_ATE_AVISAR) }), AGORA).acao).toBe(
-      "avisar",
-    );
+    expect(
+      avaliarCanal(canal({ last_status_change_at: haDias(DIAS_ATE_AVISAR) }), AGORA).acao,
+    ).toBe("avisar");
   });
 
   it("canal que não está WORKING não entra: quem avisa conexão caída é outro", () => {
@@ -77,7 +76,13 @@ describe("quando o canal mudo vira aviso", () => {
 describe("quando o aviso deixa de valer — o laço de retorno", () => {
   it("ganhou número autorizado: resolve", () => {
     const d = avaliarCanal(
-      canal({ metadata: { ai_gate: "allowlist", ai_test_phone_numbers: ["+5511999990000"] } }),
+      canal({
+        metadata: {
+          ai_gate: "allowlist",
+          ai_gate_mode: "pre_go_live",
+          ai_test_phone_numbers: ["+5511999990000"],
+        },
+      }),
       AGORA,
     );
     expect(d).toEqual({ acao: "resolver", motivo: "ganhou_numero" });
@@ -85,6 +90,16 @@ describe("quando o aviso deixa de valer — o laço de retorno", () => {
 
   it("saiu do modo de teste (aberto ao público): resolve", () => {
     const d = avaliarCanal(canal({ metadata: { ai_gate: "open" } }), AGORA);
+    expect(d).toEqual({ acao: "resolver", motivo: "saiu_do_modo_de_teste" });
+  });
+
+  it("allowlist de campanha/origem não é modo de teste", () => {
+    const d = avaliarCanal(
+      canal({
+        metadata: { ai_gate: "allowlist", ai_gate_mode: "allowlist", ai_test_phone_numbers: [] },
+      }),
+      AGORA,
+    );
     expect(d).toEqual({ acao: "resolver", motivo: "saiu_do_modo_de_teste" });
   });
 
@@ -100,7 +115,11 @@ describe("quando o aviso deixa de valer — o laço de retorno", () => {
     const d = avaliarCanal(
       canal({
         last_status_change_at: haDias(0),
-        metadata: { ai_gate: "allowlist", ai_test_phone_numbers: ["+5511999990000"] },
+        metadata: {
+          ai_gate: "allowlist",
+          ai_gate_mode: "pre_go_live",
+          ai_test_phone_numbers: ["+5511999990000"],
+        },
       }),
       AGORA,
     );
@@ -121,13 +140,23 @@ describe("leitura da metadata — o que o operador digitou pode chegar torto", (
     // canal seguiria mudo sem aviso nenhum, que é o defeito inteiro.
     expect(numerosAutorizados({ ai_test_phone_numbers: ["", "   "] })).toEqual([]);
     expect(
-      avaliarCanal(canal({ metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [""] } }), AGORA)
-        .acao,
+      avaliarCanal(
+        canal({
+          metadata: {
+            ai_gate: "allowlist",
+            ai_gate_mode: "pre_go_live",
+            ai_test_phone_numbers: [""],
+          },
+        }),
+        AGORA,
+      ).acao,
     ).toBe("avisar");
   });
 
-  it("o modo de teste é lido do `ai_gate`, como o runtime lê", () => {
-    expect(emModoDeTeste({ ai_gate: "allowlist" })).toBe(true);
+  it("o modo de teste exige `pre_go_live`; allowlist comum é campanha/origem", () => {
+    expect(emModoDeTeste({ ai_gate: "allowlist", ai_gate_mode: "pre_go_live" })).toBe(true);
+    expect(emModoDeTeste({ ai_gate: "allowlist", ai_gate_mode: "allowlist" })).toBe(false);
+    expect(emModoDeTeste({ ai_gate: "allowlist" })).toBe(false);
     expect(emModoDeTeste({ ai_gate: "open" })).toBe(false);
     expect(emModoDeTeste({ ai_gate_mode: "pre_go_live" })).toBe(false);
     expect(emModoDeTeste(null)).toBe(false);

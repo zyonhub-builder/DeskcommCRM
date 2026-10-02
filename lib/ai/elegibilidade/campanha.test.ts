@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   casarCampanha,
+  frasesDaCampanhaDoCanal,
   lerCampanhas,
   normalizarParaMatch,
   parseCampanhas,
+  substituirFrasesDaCampanhaDoCanal,
   type CampanhaWhatsapp,
 } from "./campanha";
 
@@ -23,7 +25,9 @@ const videos: CampanhaWhatsapp = {
 
 describe("normalizarParaMatch", () => {
   it("minúsculas, sem acento, espaços colapsados", () => {
-    expect(normalizarParaMatch("  Quero   ORÇAMENTO  para Vídeos ")).toBe("quero orcamento para videos");
+    expect(normalizarParaMatch("  Quero   ORÇAMENTO  para Vídeos ")).toBe(
+      "quero orcamento para videos",
+    );
   });
 });
 
@@ -39,7 +43,11 @@ describe("casarCampanha", () => {
 
   it("acento/caixa não impedem o match", () => {
     expect(
-      casarCampanha("quero saber mais sobre MARKETING PARA INCORPORADORAS", [incorporadoras], SESSAO)?.id,
+      casarCampanha(
+        "quero saber mais sobre MARKETING PARA INCORPORADORAS",
+        [incorporadoras],
+        SESSAO,
+      )?.id,
     ).toBe("incorporadoras-meta");
   });
 
@@ -69,7 +77,10 @@ describe("casarCampanha", () => {
 
   it("primeira campanha que casa vence", () => {
     const a: CampanhaWhatsapp = { id: "a", match: { tipo: "contains", valor: "orçamento" } };
-    const b: CampanhaWhatsapp = { id: "b", match: { tipo: "contains", valor: "orçamento para vídeos" } };
+    const b: CampanhaWhatsapp = {
+      id: "b",
+      match: { tipo: "contains", valor: "orçamento para vídeos" },
+    };
     expect(casarCampanha("quero orçamento para vídeos", [a, b], SESSAO)?.id).toBe("a");
   });
 });
@@ -88,7 +99,33 @@ describe("lerCampanhas / schema", () => {
   });
 
   it("item malformado é descartado sem derrubar os válidos", () => {
-    const r = parseCampanhas([{ id: "x" }, incorporadoras, { id: "y", match: { tipo: "contains", valor: "ab" } }]);
+    const r = parseCampanhas([
+      { id: "x" },
+      incorporadoras,
+      { id: "y", match: { tipo: "contains", valor: "ab" } },
+    ]);
     expect(r.map((c) => c.id)).toEqual(["incorporadoras-meta"]);
+  });
+
+  it("lê e substitui as frases presas a um canal sem apagar os outros canais", () => {
+    const settings = substituirFrasesDaCampanhaDoCanal(
+      { campanhas_whatsapp: [{ ...incorporadoras, channel_session_id: OUTRA_SESSAO }] },
+      SESSAO,
+      ["Quero falar sobre aposentadoria", "  Quero   falar sobre aposentadoria  ", "Campanha B"],
+    );
+
+    expect(frasesDaCampanhaDoCanal(settings, SESSAO)).toEqual([
+      "Quero falar sobre aposentadoria",
+      "Campanha B",
+    ]);
+    expect(frasesDaCampanhaDoCanal(settings, OUTRA_SESSAO)).toEqual([
+      "marketing para incorporadoras",
+    ]);
+    expect(lerCampanhas(settings).filter((c) => c.channel_session_id === SESSAO)).toEqual([
+      expect.objectContaining({
+        match: { tipo: "starts_with", valor: "Quero falar sobre aposentadoria" },
+      }),
+      expect.objectContaining({ match: { tipo: "starts_with", valor: "Campanha B" } }),
+    ]);
   });
 });

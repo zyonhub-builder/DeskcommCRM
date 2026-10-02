@@ -150,7 +150,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
     config: config
       ? {
           channel_session_id: config.channel_session_id,
-          // O número INTEIRO volta aqui, e só aqui: é o campo que a pessoa está
+          // O destino INTEIRO volta aqui, e só aqui: é o campo que a pessoa está
           // editando, e mascará-lo faria a tela reenviar `••••6398` ao salvar.
           // A leitura desta tabela é `admin` na RLS.
           telefone: config.telefone_destino,

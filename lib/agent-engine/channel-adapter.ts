@@ -1,5 +1,5 @@
-import type { AgentOperationContext } from '@/lib/ai/agents/operation';
-import type { JobClaim } from './queue/claim';
+import type { AgentOperationContext } from "@/lib/ai/agents/operation";
+import type { JobClaim } from "./queue/claim";
 /**
  * Contrato agnóstico de canal (F2-25; blueprint risco nº 1 + veredito executivo).
  *
@@ -39,13 +39,22 @@ export interface ChannelSendInput {
     language: string;
     /** Valor por slot, chaveado por `slotKey` — a mesma chave da tela. */
     values: Record<string, string>;
-  };  /**
+  }; /**
    * Presente = este envio é uma IMAGEM já guardada no Storage da conversa, e o
    * `body` é a legenda (pode ser vazio). Hoje só a foto do catálogo usa
    * (`agent/fotos-do-produto.ts`). Caminho, nunca URL nem bytes: quem assina a
    * URL curta para o canal é o handler de mensagens, como em toda mídia.
    */
-  media?: { storagePath: string; mime: string };
+  media?: { storagePath: string; mime: string; kind?: "image" | "audio" | "document" | "video" };
+  /** Presente = o sink pode trocar o texto por áudio antes de chamar o canal. */
+  voice?: {
+    provider: "elevenlabs" | "openai";
+    credentialId: string;
+    voiceId: string;
+    reason:
+      "audio_inbound" | "pedido_texto" | "dificuldade_leitura" | "preferencia_conversa" | "always";
+    voiceLabel?: string | null;
+  };
 }
 
 /**
@@ -55,17 +64,17 @@ export interface ChannelSendInput {
  */
 export type ChannelSendResult =
   /** enviada agora — messageId é o id da mensagem no canal/CRM */
-  | { kind: 'sent'; idempotencyKey: string; messageId: string }
+  | { kind: "sent"; idempotencyKey: string; messageId: string }
   /** replay pós-crash: já estava aceita, nada reenviado */
-  | { kind: 'already_sent'; idempotencyKey: string; messageId: string | null }
+  | { kind: "already_sent"; idempotencyKey: string; messageId: string | null }
   /** canal aceitou e SEGURA (sessão fora do ar) — reagendar, nunca dropar */
-  | { kind: 'queued'; idempotencyKey: string; messageId: string | null }
+  | { kind: "queued"; idempotencyKey: string; messageId: string | null }
   /** veto PERMANENTE de negócio (opt-out/is_blocked, irrevogável — regra dura nº 2) */
-  | { kind: 'blocked'; idempotencyKey: string }
+  | { kind: "blocked"; idempotencyKey: string }
   /** o canal registrou a mensagem como falha (retry consome tentativa) */
-  | { kind: 'failed'; idempotencyKey: string; messageId: string | null }
+  | { kind: "failed"; idempotencyKey: string; messageId: string | null }
   /** transporte/tool indisponível (transiente) — o job re-tenta com a MESMA key */
-  | { kind: 'unavailable'; reason: string };
+  | { kind: "unavailable"; reason: string };
 
 /** Saúde da sessão do número no canal (o "session health" do adapter). */
 export interface ChannelSessionHealth {
@@ -93,7 +102,7 @@ export interface ChannelCost {
   /** custo por mensagem enviada; WAHA = 0 (flat/infra); Cloud API = per-message */
   perMessageUsdCents: number;
   /** modelo de cobrança, para a doc/telemetria distinguir os canais */
-  model: 'flat' | 'per_message';
+  model: "flat" | "per_message";
 }
 
 /**

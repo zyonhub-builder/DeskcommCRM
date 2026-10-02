@@ -46,6 +46,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { tipoDeDestinoDoAviso } from "@/lib/escalacao/destino-do-aviso";
 import { logger } from "@/lib/logger";
 
 /**
@@ -66,7 +67,7 @@ export interface ChatIdentidade {
 
 /** A configuração, reduzida ao que o corte precisa. */
 export interface NumeroInternoDeAviso {
-  /** `config_aviso_de_caso.telefone_destino`, E.164. */
+  /** `config_aviso_de_caso.telefone_destino`: E.164 ou JID de grupo. */
   destino: string | null;
   /** `config_aviso_de_caso.destino_jid` — o endereço que o transporte resolveu. */
   jid: string | null;
@@ -99,7 +100,12 @@ export function limparCacheDoNumeroInterno(): void {
 export function ehOChatDoAviso(parsed: ChatIdentidade, cfg: NumeroInternoDeAviso): boolean {
   if (!cfg.destino && !cfg.jid) return false;
 
-  if (parsed.kind === "phone" && parsed.phone && cfg.destino) {
+  if (
+    parsed.kind === "phone" &&
+    parsed.phone &&
+    cfg.destino &&
+    tipoDeDestinoDoAviso(cfg.destino) === "telefone"
+  ) {
     return phoneLookupVariants(cfg.destino).includes(parsed.phone);
   }
 
@@ -250,9 +256,12 @@ export async function registrarMensagemIgnorada(
     sessionId: contexto.sessionId,
   });
   try {
-    const { error } = await db.rpc("fn_contar_mensagem_ignorada" as never, {
-      p_org: organizationId,
-    } as never);
+    const { error } = await db.rpc(
+      "fn_contar_mensagem_ignorada" as never,
+      {
+        p_org: organizationId,
+      } as never,
+    );
     if (error) {
       logger.warn("[aviso-interno] contador de mensagens ignoradas não avançou", {
         organizationId,

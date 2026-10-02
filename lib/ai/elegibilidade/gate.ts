@@ -32,14 +32,10 @@
  * aguardando resposta. Histórico. Cliente antigo. `channel_session` existir.
  * Nada disso. No modo de teste, somente a lista de números do canal. No
  * allowlist por origem, `contacts.ai_authorized_at` — carimbado por uma origem
- * elegível (webhook do Respondi, match de campanha, ação de automação, retomada
- * manual pela tela) e dentro da janela de validade.
+ * elegível (webhook do Respondi, origem rastreável, match de campanha, ação de
+ * automação, retomada manual pela tela) e dentro da janela de validade.
  */
-import {
-  AI_GATE_PRE_GO_LIVE,
-  lerNumerosDeTeste,
-  numeroPodeTestar,
-} from "./pre-go-live";
+import { AI_GATE_PRE_GO_LIVE, lerNumerosDeTeste, numeroPodeTestar } from "./pre-go-live";
 
 /** Valores aceitos em `channel_sessions.metadata.ai_gate`. */
 export const AI_GATE_MODES = ["open", "allowlist"] as const;
@@ -160,7 +156,9 @@ export function ttlDaAutorizacaoMs(env: Record<string, string | undefined>): num
  * entende: `Date`, `Infinity` (o `'infinity'` do Postgres, que o `pg` devolve
  * como string e o supabase-js também) ou `null`. String de data inválida → `null`.
  */
-export function normalizarInstante(v: Date | string | number | null | undefined): Date | number | null {
+export function normalizarInstante(
+  v: Date | string | number | null | undefined,
+): Date | number | null {
   if (v === null || v === undefined) return null;
   if (v instanceof Date) return v;
   if (typeof v === "number") return v;
@@ -200,8 +198,7 @@ export function montarEstadoDeElegibilidade(raw: {
     assigneeKind: raw.assigneeKind,
     aiAuthorizedAt: autorizadoEm instanceof Date ? autorizadoEm : null,
     preGoLiveAtivo: preGoLive,
-    numeroDeTesteAutorizado:
-      preGoLive && numeroPodeTestar(raw.contactPhoneNumber, numerosDeTeste),
+    numeroDeTesteAutorizado: preGoLive && numeroPodeTestar(raw.contactPhoneNumber, numerosDeTeste),
     agora: raw.agora,
     ttlMs: raw.ttlMs,
   };

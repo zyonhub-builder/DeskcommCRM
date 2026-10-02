@@ -103,7 +103,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
   if (!cfg?.channel_session_id) {
     return fail(
       "aviso_nao_configurado",
-      t("Escolha a conexão e o número e salve antes de mandar o teste."),
+      t("Escolha a conexão e o destino e salve antes de mandar o teste."),
       422,
       { requestId },
     );

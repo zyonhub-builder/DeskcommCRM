@@ -127,7 +127,7 @@ export default async function CredentialsPage() {
           {/* Os provedores saem da lista única: escritos à mão, a frase citava
               três quando já eram cinco. */}
           {traduzir(
-            "A conta de inteligência artificial é sua: você contrata direto com {provedores} e cola a chave aqui. A chave fica guardada criptografada e nunca mais aparece na tela depois de salva — nem para você. O Jev (TypeSafe) não conversa com o cliente: a chave dele serve só para decisões rápidas.",
+            "A conta de inteligência artificial é sua: você contrata direto com {provedores} e cola a chave aqui. A chave fica guardada criptografada e nunca mais aparece na tela depois de salva — nem para você. O Jev (TypeSafe) não conversa com o cliente: a chave dele serve só para decisões rápidas. ElevenLabs é usado só para transformar respostas em áudio.",
             idioma,
           ).replace(
             "{provedores}",

@@ -1,9 +1,9 @@
 /**
  * ESCREVER a autorização de IA de um contato — num lugar só.
  *
- * As quatro origens elegíveis (webhook do Respondi, match de campanha na
- * ingestão, ação de automação `send_ai_message`, retomada manual pela tela)
- * chamam `autorizarContatoParaIA`. A `reason` é o rastro: quem lê
+ * As origens elegíveis (webhook do Respondi, origem rastreável, match de
+ * campanha na ingestão, ação de automação `send_ai_message`, retomada manual
+ * pela tela) chamam `autorizarContatoParaIA`. A `reason` é o rastro: quem lê
  * `contacts.ai_authorized_reason` sabe por que a IA pôde assumir.
  *
  * `revogarAutorizacaoDeIA` é o oposto — usado quando um humano assume o
@@ -16,10 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 
 export type MotivoDeAutorizacao =
-  | `respondi:${string}`
-  | `campanha:${string}`
-  | `automacao:${string}`
-  | "retomada_manual";
+  `respondi:${string}` | `campanha:${string}` | `automacao:${string}` | "retomada_manual";
 
 /**
  * Carimba `contacts.ai_authorized_at = now()` + `ai_authorized_reason`.

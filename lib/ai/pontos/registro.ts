@@ -261,6 +261,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "nenhum",
   },
   {
+    id: "commercial_diagnosis_analysis",
+    rotulo: "Analisar diagnóstico comercial",
+    oQueFaz:
+      "Lê os agregados do diagnóstico comercial e separa aquisição, atendimento, funil e custo em próximos passos.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "app/api/v1/metrics/diagnostico-comercial/analise/route.ts",
+    sintomaDeFalha:
+      "O diagnóstico continua com a leitura objetiva, mas não consegue gerar a interpretação executiva por IA nem mostrar o custo dessa análise.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "draft_suggestion",
     rotulo: "Sugerir resposta ao atendente",
     oQueFaz: "Escreve um rascunho de resposta para o atendente humano revisar antes de enviar.",

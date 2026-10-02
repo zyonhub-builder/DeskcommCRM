@@ -62,8 +62,9 @@ function fatos(patch: Partial<FatosDaTelaDeAviso> = {}): FatosDaTelaDeAviso {
 const codigos = (f: FatosDaTelaDeAviso) => avisosDaTela(f).map((a) => a.codigo);
 
 describe("o telefone de aviso", () => {
-  it("aceita só E.164 — a MESMA forma do CHECK do banco", () => {
+  it("aceita telefone E.164 e JID de grupo — a MESMA forma do CHECK do banco", () => {
     expect(telefoneDeAvisoValido("+5531998966398")).toBe(true);
+    expect(telefoneDeAvisoValido("120363412080714368@g.us")).toBe(true);
     // Sem `+`, com zero no DDI, curto demais e longo demais: os quatro jeitos de
     // o RPC devolver `aviso_de_caso_telefone_invalido` depois de a pessoa ter
     // preenchido a tela inteira.
@@ -71,11 +72,14 @@ describe("o telefone de aviso", () => {
     expect(telefoneDeAvisoValido("+0531998966398")).toBe(false);
     expect(telefoneDeAvisoValido("+5531999")).toBe(false);
     expect(telefoneDeAvisoValido("+5531998966398123456")).toBe(false);
+    expect(telefoneDeAvisoValido("120363412080714368")).toBe(false);
+    expect(telefoneDeAvisoValido("120363412080714368@c.us")).toBe(false);
   });
 
   it("normaliza o que a pessoa digita para a forma que o banco aceita", () => {
     expect(normalizarTelefoneDeAviso("(31) 99896-6398")).toBe("+31998966398");
     expect(normalizarTelefoneDeAviso("+55 31 99896-6398")).toBe("+5531998966398");
+    expect(normalizarTelefoneDeAviso(" 120363412080714368@G.US ")).toBe("120363412080714368@g.us");
     // Campo vazio não vira `+`: um `+` sozinho reprovaria na validação e diria à
     // pessoa que ela digitou algo errado quando ela não digitou nada.
     expect(normalizarTelefoneDeAviso("")).toBe("");
@@ -94,9 +98,9 @@ describe("pode ligar o aviso?", () => {
 
   it("não sem número válido", () => {
     const f = fatos();
-    expect(
-      podeLigarOAviso({ ...f, config: { ...f.config!, telefone: "31998966398" } }),
-    ).toBe(false);
+    expect(podeLigarOAviso({ ...f, config: { ...f.config!, telefone: "31998966398" } })).toBe(
+      false,
+    );
   });
 
   it("não quando a conexão escolhida não manda texto livre", () => {
@@ -207,19 +211,19 @@ describe("os estados que alertam sem bloquear", () => {
   });
 
   it("nenhum agente com casos ligados — nenhum aviso vai sair por ninguém", () => {
-    expect(codigos(fatos({ agentesPublicados: { total: 2, comCasos: 0, assistidos: 0 } }))).toContain(
-      "casos_desligados",
-    );
+    expect(
+      codigos(fatos({ agentesPublicados: { total: 2, comCasos: 0, assistidos: 0 } })),
+    ).toContain("casos_desligados");
     // Zero agente publicado é a mesma frase: ninguém está autorizado a abrir caso.
-    expect(codigos(fatos({ agentesPublicados: { total: 0, comCasos: 0, assistidos: 0 } }))).toContain(
-      "casos_desligados",
-    );
+    expect(
+      codigos(fatos({ agentesPublicados: { total: 0, comCasos: 0, assistidos: 0 } })),
+    ).toContain("casos_desligados");
   });
 
   it("todos os agentes em modo assistido — eles sugerem, não abrem caso sozinhos", () => {
-    expect(codigos(fatos({ agentesPublicados: { total: 2, comCasos: 2, assistidos: 2 } }))).toContain(
-      "agente_assistido",
-    );
+    expect(
+      codigos(fatos({ agentesPublicados: { total: 2, comCasos: 2, assistidos: 2 } })),
+    ).toContain("agente_assistido");
     // Um assistido entre dois NÃO alerta: o outro abre caso, e o alerta seria falso.
     expect(
       codigos(fatos({ agentesPublicados: { total: 2, comCasos: 2, assistidos: 1 } })),

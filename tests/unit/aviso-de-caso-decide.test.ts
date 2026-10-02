@@ -41,6 +41,7 @@ const CASO = "22222222-2222-4222-8222-222222222222";
 const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const CONTATO = "44444444-4444-4444-8444-444444444444";
 const CANAL = "55555555-5555-4555-8555-555555555555";
+const GRUPO = "120363412080714368@g.us";
 
 function evento(over: Partial<EventRow> = {}): EventRow {
   return {
@@ -65,6 +66,7 @@ interface Estado {
   anonimizado: boolean;
   /** O número de destino virou o de uma conexão ATIVA desta organização? */
   destinoEhDaPropriaOrg: boolean;
+  consultasDestinoProprio: string[];
   entregaExistente: Record<string, unknown> | null;
   patches: Array<Record<string, unknown>>;
   central: Array<Record<string, unknown>>;
@@ -99,6 +101,7 @@ function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
     canal: { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: true },
     anonimizado: false,
     destinoEhDaPropriaOrg: false,
+    consultasDestinoProprio: [],
     entregaExistente: null,
     patches: [],
     central: [],
@@ -152,7 +155,8 @@ function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
       async carregaCanal() {
         return e.canal as never;
       },
-      async destinoEhDaPropriaOrganizacao() {
+      async destinoEhDaPropriaOrganizacao(_org, telefone) {
+        e.consultasDestinoProprio.push(telefone);
         return e.destinoEhDaPropriaOrg;
       },
       async avisaNaCentral(entrada) {
@@ -176,6 +180,7 @@ function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
         return true;
       },
       async resolveDestino(_org, _canal, telefone) {
+        if (telefone.endsWith("@g.us")) return telefone;
         return `${telefone.replace(/\D/g, "")}@c.us`;
       },
       async envia(_org, _canal, to, body) {
@@ -216,7 +221,9 @@ describe("aviso ao suporte — nenhum desfecho é `error`", () => {
   });
 
   it("configuração desligada sai `skipped`, sem tocar a rede", async () => {
-    const { deps, estado } = monta({ cfg: { channel_session_id: CANAL, telefone_destino: "+5531998966398", ligado: false } });
+    const { deps, estado } = monta({
+      cfg: { channel_session_id: CANAL, telefone_destino: "+5531998966398", ligado: false },
+    });
     const r = await aplicaAvisoDeCaso(deps, evento());
     expect(r.status).toBe("skipped");
     expect(estado.enviados).toHaveLength(0);
@@ -229,7 +236,14 @@ describe("aviso ao suporte — nenhum desfecho é `error`", () => {
       { caso: { id: CASO, organization_id: ORG, source: "mcp_externo", status: "awaiting_human" } },
       { caso: { id: CASO, organization_id: ORG, source: "agent", status: "resolved" } },
       { canal: null },
-      { canal: { id: CANAL, status: "WORKING", archived_at: new Date().toISOString(), aceitaMensagemLivre: true } },
+      {
+        canal: {
+          id: CANAL,
+          status: "WORKING",
+          archived_at: new Date().toISOString(),
+          aceitaMensagemLivre: true,
+        },
+      },
       { canal: { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: false } },
       { canal: { id: CANAL, status: "STOPPED", archived_at: null, aceitaMensagemLivre: true } },
       { anonimizado: true },
@@ -279,7 +293,13 @@ describe("aviso ao suporte — o que impede o envio", () => {
 
   it("caso fechado entre o evento e o dreno → não envia", async () => {
     const { deps, estado } = monta({
-      caso: { id: CASO, organization_id: ORG, source: "agent", status: "resolved", conversation_id: CONVERSA },
+      caso: {
+        id: CASO,
+        organization_id: ORG,
+        source: "agent",
+        status: "resolved",
+        conversation_id: CONVERSA,
+      },
     });
     const r = await aplicaAvisoDeCaso(deps, evento());
     expect(r.detail).toContain("caso_fechado");
@@ -288,7 +308,13 @@ describe("aviso ao suporte — o que impede o envio", () => {
 
   it("origem que não é do motor → não envia", async () => {
     const { deps, estado } = monta({
-      caso: { id: CASO, organization_id: ORG, source: "mcp_externo", status: "awaiting_human", conversation_id: CONVERSA },
+      caso: {
+        id: CASO,
+        organization_id: ORG,
+        source: "mcp_externo",
+        status: "awaiting_human",
+        conversation_id: CONVERSA,
+      },
     });
     const r = await aplicaAvisoDeCaso(deps, evento());
     expect(r.detail).toContain("origem_nao_aceita");
@@ -457,6 +483,27 @@ describe("aviso ao suporte — o envio bem-sucedido", () => {
     expect(estado.auditorias).toContain("ai.case_alert_sent");
   });
 
+  it("grupo sai pelo JID salvo e não passa pela guarda de telefone da organização", async () => {
+    const { deps, estado } = monta({
+      cfg: {
+        organization_id: ORG,
+        channel_session_id: CANAL,
+        telefone_destino: GRUPO,
+        destino_jid: GRUPO,
+        ligado: true,
+      },
+      destinoEhDaPropriaOrg: true,
+    });
+    const r = await aplicaAvisoDeCaso(deps, evento());
+
+    expect(r.status).toBe("ok");
+    expect(estado.consultasDestinoProprio).toEqual([]);
+    expect(estado.enviados[0]?.to).toBe(GRUPO);
+    expect(estado.eventosDoCaso[0]?.metadata).toMatchObject({
+      destino_mascarado: "grupo ••••4368",
+    });
+  });
+
   it("o CORPO do aviso nunca é guardado — só o resumo criptográfico dele", async () => {
     const { deps, estado } = monta();
     await aplicaAvisoDeCaso(deps, evento());
@@ -467,19 +514,22 @@ describe("aviso ao suporte — o envio bem-sucedido", () => {
   });
 
   it("destino que o transporte não sabe endereçar falha com o código próprio", async () => {
-    const { deps, estado } = monta({}, {
-      transporte: {
-        async configurado() {
-          return true;
-        },
-        async resolveDestino() {
-          return null;
-        },
-        async envia() {
-          throw new Error("não devia chegar aqui");
+    const { deps, estado } = monta(
+      {},
+      {
+        transporte: {
+          async configurado() {
+            return true;
+          },
+          async resolveDestino() {
+            return null;
+          },
+          async envia() {
+            throw new Error("não devia chegar aqui");
+          },
         },
       },
-    });
+    );
     await aplicaAvisoDeCaso(deps, evento());
     expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "destino_invalido" });
   });

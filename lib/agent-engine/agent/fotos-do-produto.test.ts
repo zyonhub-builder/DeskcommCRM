@@ -192,6 +192,26 @@ describe("corpoDoEnvio — a foto chega ao handler como imagem da conversa", () 
     expect("body" in corpo).toBe(false);
   });
 
+  it("áudio preparado chega ao handler como audio da conversa", () => {
+    expect(
+      corpoDoEnvio(
+        {
+          ...base,
+          body: "transcrição para o histórico",
+          media: { storagePath: "voz.mp3", mime: "audio/mpeg", kind: "audio" },
+        },
+        "k",
+      ),
+    ).toEqual({
+      conversation_id: CONVERSA,
+      type: "audio",
+      media_storage_path: "voz.mp3",
+      media_mime: "audio/mpeg",
+      body: "transcrição para o histórico",
+      metadata: { idempotency_key: "k" },
+    });
+  });
+
   it("texto comum segue texto", () => {
     expect(corpoDoEnvio({ ...base, body: "oi" }, "k")).toMatchObject({ type: "text", body: "oi" });
   });
