@@ -30,11 +30,13 @@ import {
   useSendAdminInstanceTestAlert,
   type AdminInstanceSettingsPatch,
 } from "@/hooks/useAdminInstances";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { Bell, CheckCircle, Clock, PaperPlaneTilt, WifiHigh, WifiSlash } from "@/lib/ui/icons";
 
 export function InstanciasAdminClient() {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const { data, isLoading, isError, refetch } = useAdminInstances();
   const salvar = useSaveAdminInstanceSettings();
   const teste = useSendAdminInstanceTestAlert();
@@ -219,18 +221,14 @@ export function InstanciasAdminClient() {
                 <span>{t("Avisar quando cair")}</span>
                 <Switch
                   checked={form.notify_on_down}
-                  onCheckedChange={(notify_on_down) =>
-                    updateForm({ notify_on_down })
-                  }
+                  onCheckedChange={(notify_on_down) => updateForm({ notify_on_down })}
                 />
               </label>
               <label className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
                 <span>{t("Avisar quando voltar")}</span>
                 <Switch
                   checked={form.notify_on_recovered}
-                  onCheckedChange={(notify_on_recovered) =>
-                    updateForm({ notify_on_recovered })
-                  }
+                  onCheckedChange={(notify_on_recovered) => updateForm({ notify_on_recovered })}
                 />
               </label>
             </div>
@@ -259,7 +257,7 @@ export function InstanciasAdminClient() {
               <LinhaResumo label={t("Destino salvo")} value={data.settings.recipient_mask ?? "—"} />
               <LinhaResumo
                 label={t("Atualizado")}
-                value={formatDate(data.settings.updated_at) ?? "—"}
+                value={formatDate(data.settings.updated_at, tagDoIdioma) ?? "—"}
               />
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -308,7 +306,9 @@ export function InstanciasAdminClient() {
                   <TableCell className="font-medium">{session.organization_name}</TableCell>
                   <TableCell>
                     <div className="max-w-[260px]">
-                      <p className="truncate">{session.display_name || session.phone_number || "—"}</p>
+                      <p className="truncate">
+                        {session.display_name || session.phone_number || "—"}
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {session.phone_number ?? session.id}
                       </p>
@@ -327,7 +327,9 @@ export function InstanciasAdminClient() {
                   <TableCell className="tabular-nums">
                     {session.pending_conversations_10min}
                   </TableCell>
-                  <TableCell>{formatDate(session.last_health_check_at) ?? "—"}</TableCell>
+                  <TableCell>
+                    {formatDate(session.last_health_check_at, tagDoIdioma) ?? "—"}
+                  </TableCell>
                 </TableRow>
               ))}
               {data.sessions.length === 0 ? (
@@ -360,7 +362,7 @@ export function InstanciasAdminClient() {
             <TableBody>
               {data.deliveries.map((delivery) => (
                 <TableRow key={delivery.id}>
-                  <TableCell>{formatDate(delivery.created_at) ?? "—"}</TableCell>
+                  <TableCell>{formatDate(delivery.created_at, tagDoIdioma) ?? "—"}</TableCell>
                   <TableCell>{labelEvento(delivery.event_kind, t)}</TableCell>
                   <TableCell>{delivery.affected_organization_name ?? "—"}</TableCell>
                   <TableCell>
@@ -420,13 +422,13 @@ function ResumoCard({
     <Card>
       <CardContent className="flex items-center justify-between gap-3 py-5">
         <div>
-          <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase">{label}</p>
           <p
             className={
               danger
-                ? "mt-1 text-3xl font-semibold tabular-nums text-red-600"
+                ? "mt-1 text-3xl font-semibold text-red-600 tabular-nums"
                 : accent
-                  ? "mt-1 text-3xl font-semibold tabular-nums text-amber-600"
+                  ? "mt-1 text-3xl font-semibold text-amber-600 tabular-nums"
                   : "mt-1 text-3xl font-semibold tabular-nums"
             }
           >
@@ -493,11 +495,11 @@ function labelStatusEntrega(status: string, t: (s: string) => string) {
   return status;
 }
 
-function formatDate(value: string | null): string | null {
+function formatDate(value: string | null, tagDoIdioma: string): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString("pt-BR", {
+  return date.toLocaleString(tagDoIdioma, {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",

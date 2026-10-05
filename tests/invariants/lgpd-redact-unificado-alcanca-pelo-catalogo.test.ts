@@ -141,6 +141,18 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "cascata",
     razao: "Passo 3: body vira '[mensagem anonimizada]', mídia zerada e metadata esvaziada; status e timestamps preservados.",
   },
+  ai_lab_runs: {
+    decidida: "redigir",
+    caminho: "cascata",
+    razao:
+      "Rodada de laboratório contra contato real: telefone, nome, roteiro, relatório e erro podem reidentificar o titular; a linha fica sem contato para manter a evidência técnica.",
+  },
+  zapsign_documents: {
+    decidida: "redigir",
+    caminho: "cascata",
+    razao:
+      "Documento de assinatura guarda signatários e payload do provedor; o vínculo direto com o contato e os campos livres saem, preservando status e reconciliação.",
+  },
   crm_lead_activities: {
     decidida: "redigir",
     caminho: "cascata",

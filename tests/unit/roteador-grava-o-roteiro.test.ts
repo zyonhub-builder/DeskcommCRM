@@ -33,7 +33,13 @@ function pedido(flow: string | null) {
     method: "PUT",
     body: JSON.stringify({
       members: [
-        { agent_id: AGENTE, intent_name: "financiar", intent_description: "quer financiar", examples: [], flow_pointer_id: flow },
+        {
+          agent_id: AGENTE,
+          intent_name: "financiar",
+          intent_description: "quer financiar",
+          examples: [],
+          flow_pointer_id: flow,
+        },
       ],
     }),
   });
@@ -41,9 +47,17 @@ function pedido(flow: string | null) {
 
 beforeEach(() => {
   vi.unstubAllEnvs();
-  vi.clearAllMocks();
+  mocks.guard.mockReset();
+  mocks.support.mockReset();
+  mocks.admin.mockReset();
+  mocks.pool.mockReset();
+  mocks.audit.mockReset();
   mocks.support.mockResolvedValue(null);
-  mocks.guard.mockResolvedValue({ ok: true, user: { id: AGENTE, idioma: "pt-BR" }, org: { orgId: ORG } });
+  mocks.guard.mockResolvedValue({
+    ok: true,
+    user: { id: AGENTE, idioma: "pt-BR" },
+    org: { orgId: ORG },
+  });
 });
 
 /** Postgres de mentira: `roteiroValido` diz se a consulta de roteiros o acha (mesma empresa + atendimento). */
@@ -55,7 +69,8 @@ function postgres(roteiroValido: boolean) {
       consultas.push({ sql, params });
       if (sql.includes("from ai_routers")) return { rows: [{ id: ROUTER }] };
       if (sql.includes("from ai_agents")) return { rows: [{ id: AGENTE }] };
-      if (sql.includes("from followup_flow_pointers")) return { rows: roteiroValido ? [{ id: ROTEIRO }] : [] };
+      if (sql.includes("from followup_flow_pointers"))
+        return { rows: roteiroValido ? [{ id: ROTEIRO }] : [] };
       return { rows: [] };
     }),
   };
@@ -82,7 +97,9 @@ describe("caminho Postgres", () => {
     const consultas = postgres(false);
     const r = await PUT(pedido(ROTEIRO), { params: Promise.resolve({ id: ROUTER }) });
     expect(r.status).toBe(422);
-    expect(consultas.some((c) => c.sql.startsWith("delete") || c.sql.includes("insert into"))).toBe(false);
+    expect(consultas.some((c) => c.sql.startsWith("delete") || c.sql.includes("insert into"))).toBe(
+      false,
+    );
     expect(consultas.some((c) => c.sql === "rollback")).toBe(true);
   });
 
@@ -98,6 +115,7 @@ describe("caminho Postgres", () => {
 
 /** Supabase de mentira para o caminho HTTP: registra filtros e o que foi inserido. */
 function http(roteiroValido: boolean) {
+  vi.stubEnv("SUPABASE_DB_URL", "");
   const inseridos: unknown[] = [];
   const filtrosDoRoteiro: Array<[string, unknown]> = [];
   const from = vi.fn((tabela: string) => {
@@ -140,7 +158,9 @@ describe("caminho HTTP (instalação sem SUPABASE_DB_URL)", () => {
     const { inseridos, filtrosDoRoteiro } = http(true);
     const r = await PUT(pedido(ROTEIRO), { params: Promise.resolve({ id: ROUTER }) });
     expect(r.status).toBe(200);
-    expect(inseridos).toEqual([expect.objectContaining({ flow_pointer_id: ROTEIRO, organization_id: ORG })]);
+    expect(inseridos).toEqual([
+      expect.objectContaining({ flow_pointer_id: ROTEIRO, organization_id: ORG }),
+    ]);
     expect(filtrosDoRoteiro).toEqual(
       expect.arrayContaining([
         ["organization_id", ORG],

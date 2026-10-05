@@ -44,7 +44,7 @@ const hrefs = (settings: unknown, role: "agent" | "admin" = "admin") =>
  * só os grupos que aparecem na dobra, sem o grupo do rodapé.
  */
 const itensNoMenuLateral = (settings: unknown, role: "agent" | "admin" = "admin") =>
-  sidebarGroups(false, role, settings as InterfaceSettings | undefined)
+  sidebarGroups(false, role, settings as InterfaceSettings | undefined, [])
     .filter((grupo) => grupo.group.id !== GRUPO_NO_RODAPE)
     .reduce((total, grupo) => total + grupo.items.length, 0);
 
@@ -136,8 +136,14 @@ describe("a organização não consegue se trancar do lado de fora", () => {
     const hostis: unknown[] = [
       { preset: "simplificada" },
       { preset: "completa", destinos: ["/app/inbox"] },
-      combinarInterfaces({ preset: "completa", destinos: ["/app/inbox"] }, { preset: "completa", destinos: ["/app/kanban"] }),
-      combinarInterfaces({ preset: "simplificada" }, { preset: "completa", destinos: ["/app/tasks"] }),
+      combinarInterfaces(
+        { preset: "completa", destinos: ["/app/inbox"] },
+        { preset: "completa", destinos: ["/app/kanban"] },
+      ),
+      combinarInterfaces(
+        { preset: "simplificada" },
+        { preset: "completa", destinos: ["/app/tasks"] },
+      ),
     ];
     for (const escolha of hostis) {
       expect(
@@ -158,7 +164,9 @@ describe("a organização não consegue se trancar do lado de fora", () => {
       // sobre uma porta que não existe mais.
       const d = NAV_CATALOG.find((item) => item.href === porta);
       expect(d, `${porta} está em PORTAS_ESSENCIAIS e não existe no catálogo`).toBeDefined();
-      expect(essencial(d!, "admin"), `${porta} está na lista e não é tratada como essencial`).toBe(true);
+      expect(essencial(d!, "admin"), `${porta} está na lista e não é tratada como essencial`).toBe(
+        true,
+      );
     }
   });
 
@@ -174,7 +182,9 @@ describe("a organização não consegue se trancar do lado de fora", () => {
 
   it("controle: uma porta comum continua ocultável — senão a garantia seria vacuidade", () => {
     // Se TUDO fosse essencial, os casos acima passariam sem medir nada.
-    expect(hrefs({ preset: "completa", destinos: ["/app/inbox"] }, "admin")).not.toContain("/app/kanban");
+    expect(hrefs({ preset: "completa", destinos: ["/app/inbox"] }, "admin")).not.toContain(
+      "/app/kanban",
+    );
   });
 });
 
@@ -222,7 +232,9 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
     ];
     for (const daEmpresa of casos) {
       for (const doVinculo of [completa, simplificada, undefined]) {
-        expect(itensNoMenuLateral(combinarInterfaces(daEmpresa, doVinculo))).toBeLessThanOrEqual(15);
+        expect(itensNoMenuLateral(combinarInterfaces(daEmpresa, doVinculo))).toBeLessThanOrEqual(
+          15,
+        );
       }
     }
   });

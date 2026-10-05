@@ -673,7 +673,7 @@ export async function generateWhatsappHistoryReport(input: {
     actorUserId: input.actorUserId,
     organizationId: input.organizationId,
     resourceType: "whatsapp_history_report",
-    resourceId: String(saved.id),
+    resourceId: saved.id,
     requestId: input.requestId,
     metadata: {
       import_id: input.importId,
@@ -882,7 +882,7 @@ export async function generateWhatsappHistoryAiReport(input: {
     actorUserId: input.actorUserId,
     organizationId: input.organizationId,
     resourceType: "whatsapp_history_report",
-    resourceId: String(saved.id),
+    resourceId: saved.id,
     requestId: input.requestId,
     metadata: {
       import_id: input.importId,

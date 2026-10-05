@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { copyToClipboard } from "@/lib/clipboard";
+import { randomId } from "@/lib/random-id";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -98,7 +100,7 @@ function PainelDeTeste({ agentesCount, selected }: PainelDeTesteProps) {
     if (!selected || !version || !texto || pending) return;
 
     const pergunta: MensagemDeTeste = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       direction: "inbound",
       body: texto,
       sent_at: new Date().toISOString(),
@@ -130,7 +132,7 @@ function PainelDeTeste({ agentesCount, selected }: PainelDeTesteProps) {
         setMensagens((atuais) => [
           ...atuais,
           {
-            id: crypto.randomUUID(),
+            id: randomId(),
             direction: "outbound",
             body: resposta || t("O agente não produziu uma resposta para esta mensagem."),
             sent_at: new Date().toISOString(),
@@ -316,12 +318,11 @@ export function PortalDeTesteDeAgentes({ agentes, selectedAgentId, titulo, subti
   async function copiarLink() {
     if (!selected || typeof window === "undefined") return;
     const url = `${window.location.origin}/app/ai/testes/${selected.id}`;
-    try {
-      await window.navigator.clipboard.writeText(url);
+    if (await copyToClipboard(url)) {
       toast.success(t("Link copiado."));
-    } catch {
-      toast.error(t("Não foi possível copiar o link."));
+      return;
     }
+    toast.error(t("Não foi possível copiar o link."));
   }
 
   return (

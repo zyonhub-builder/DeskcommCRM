@@ -120,7 +120,7 @@ function canalQr(over: Linha = {}): Linha {
 
 const SEM_COLUNA_LEITURA = {
   code: "42703",
-  message: 'column channel_sessions_1.archived_at does not exist',
+  message: "column channel_sessions_1.archived_at does not exist",
 };
 const SEM_COLUNA_ESCRITA = {
   code: "PGRST204",
@@ -154,7 +154,8 @@ function makeDb(opts: DbOpts = {}): Registro {
       return this;
     }
     in(col: string, val: unknown[]): this {
-      this.filtros.push([col, val]); return this;
+      this.filtros.push([col, val]);
+      return this;
     }
     is(col: string, val: unknown): this {
       this.filtros.push([col, val]);
@@ -168,6 +169,15 @@ function makeDb(opts: DbOpts = {}): Registro {
       return this;
     }
     limit(): this {
+      return this;
+    }
+    gt(): this {
+      return this;
+    }
+    contains(): this {
+      return this;
+    }
+    or(): this {
       return this;
     }
     maybeSingle(): this {
@@ -184,17 +194,19 @@ function makeDb(opts: DbOpts = {}): Registro {
       if (opts.semColunaArquivada !== true) return null;
       if (this.op === "select") {
         const citada =
-          this.colunas.includes("archived_at") ||
-          this.filtros.some(([c]) => c === "archived_at");
+          this.colunas.includes("archived_at") || this.filtros.some(([c]) => c === "archived_at");
         return citada ? SEM_COLUNA_LEITURA : null;
       }
       return this.patch && "archived_at" in this.patch ? SEM_COLUNA_ESCRITA : null;
     }
 
     private casam(): Linha[] {
-      return linhas.filter((l) =>
-        this.filtros.every(([c, v]) => Array.isArray(v) ? v.includes(l[c]) : (l[c] ?? null) === v)
-        && this.negados.every(([c, v]) => (l[c] ?? null) !== v));
+      return linhas.filter(
+        (l) =>
+          this.filtros.every(([c, v]) =>
+            Array.isArray(v) ? v.includes(l[c]) : (l[c] ?? null) === v,
+          ) && this.negados.every(([c, v]) => (l[c] ?? null) !== v),
+      );
     }
 
     private executar(): { data: unknown; error: unknown } {
@@ -241,16 +253,27 @@ function makeDb(opts: DbOpts = {}): Registro {
   const client = {
     rpc: async (fn: string, args: Linha) => {
       if (fn === "fn_reserve_channel_connection") {
-        let channel = linhas.find(l => l.organization_id === args.p_org && l.waha_session_name === NOME_SESSAO);
+        let channel = linhas.find(
+          (l) => l.organization_id === args.p_org && l.waha_session_name === NOME_SESSAO,
+        );
         if (!channel) {
-          channel = canalQr({ id: CANAL, status: "STARTING", phone_number: null }); linhas.push(channel);
-          registro.escritas.push({ tipo: "insert", table: "channel_sessions", patch: channel, recusada: false });
+          channel = canalQr({ id: CANAL, status: "STARTING", phone_number: null });
+          linhas.push(channel);
+          registro.escritas.push({
+            tipo: "insert",
+            table: "channel_sessions",
+            patch: channel,
+            recusada: false,
+          });
         }
-        return { data: { replay: false, channel: { ...channel }, receipt_id: CANAL, lease_token: USER }, error: null };
+        return {
+          data: { replay: false, channel: { ...channel }, receipt_id: CANAL, lease_token: USER },
+          error: null,
+        };
       }
       if (fn === "fn_finish_channel_connection") {
         if (args.p_status === "remote_created") return { data: {}, error: null };
-        const channel = linhas.find(l => l.organization_id === args.p_org && l.id === CANAL);
+        const channel = linhas.find((l) => l.organization_id === args.p_org && l.id === CANAL);
         if (!channel) return { data: null, error: { message: "missing" } };
         if (channel.archived_at) channel.phone_number = null;
         Object.assign(channel, { status: args.p_status, archived_at: null });
@@ -289,7 +312,10 @@ function authOk(): void {
 
 function transporteOk() {
   const cliente = {
-    createSession: vi.fn(async (name: string) => ({ created: false, session: { name, status: "STOPPED" } })),
+    createSession: vi.fn(async (name: string) => ({
+      created: false,
+      session: { name, status: "STOPPED" },
+    })),
     startExistingSession: vi.fn(async (name: string) => ({ name, status: "STARTING" })),
     stopSession: vi.fn(async () => undefined),
     logoutSession: vi.fn(async () => undefined),
@@ -521,7 +547,9 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
 
   it("⭐ canal que nunca pareou com nome de 69: renomeia e reconecta", async () => {
     authOk();
-    const db = makeDb({ sessions: [canalQr({ status: "FAILED", waha_session_name: NOME_LONGO, phone_number: null })] });
+    const db = makeDb({
+      sessions: [canalQr({ status: "FAILED", waha_session_name: NOME_LONGO, phone_number: null })],
+    });
     const waha = transporteOk();
     const { POST } = await import("@/app/api/v1/channel-sessions/[id]/reconnect/route");
     const res = await POST(req(), ctx());
@@ -543,7 +571,9 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
    */
   it("⭐ canal PAREADO e parado com nome de 69: recusa, não renomeia, não toca o transporte", async () => {
     authOk();
-    const db = makeDb({ sessions: [canalQr({ status: "STOPPED", waha_session_name: NOME_LONGO })] });
+    const db = makeDb({
+      sessions: [canalQr({ status: "STOPPED", waha_session_name: NOME_LONGO })],
+    });
     const waha = transporteOk();
     const { POST } = await import("@/app/api/v1/channel-sessions/[id]/reconnect/route");
     const res = await POST(req(), ctx());
@@ -574,7 +604,10 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
 
 describe("POST /api/v1/onboarding/whatsapp/session — retomar o pareamento ressuscita", () => {
   const req = () =>
-    new Request("http://localhost/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Idempotency-Key": USER } });
+    new Request("http://localhost/api/v1/onboarding/whatsapp/session", {
+      method: "POST",
+      headers: { "Idempotency-Key": USER },
+    });
 
   it("⭐ linha arquivada com o mesmo nome de sessão volta ATIVA após confirmar o transporte", async () => {
     authOk();
@@ -725,7 +758,10 @@ describe("toda ressurreição é auditada — nenhuma nasce muda", () => {
       chamar: async () => {
         const { POST } = await import("@/app/api/v1/onboarding/whatsapp/session/route");
         return POST(
-          new Request("http://localhost/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Idempotency-Key": USER } }),
+          new Request("http://localhost/api/v1/onboarding/whatsapp/session", {
+            method: "POST",
+            headers: { "Idempotency-Key": USER },
+          }),
         );
       },
     },

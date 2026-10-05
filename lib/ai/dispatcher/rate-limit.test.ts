@@ -29,14 +29,25 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const UPSTASH_ORIGINAL = {
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+};
+
 describe("contador em memória", () => {
   beforeEach(() => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
     vi.resetModules();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-10T12:00:00Z"));
   });
 
   afterEach(() => {
+    if (UPSTASH_ORIGINAL.url === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
+    else process.env.UPSTASH_REDIS_REST_URL = UPSTASH_ORIGINAL.url;
+    if (UPSTASH_ORIGINAL.token === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_TOKEN = UPSTASH_ORIGINAL.token;
     vi.useRealTimers();
   });
 

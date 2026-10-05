@@ -114,6 +114,26 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "o template da org A\") prova isolamento com `countAs` real.",
   },
   {
+    tabela: "ai_lab_scenarios",
+    razao:
+      "tests/invariants/ai-lab-zapsign-rls.test.ts — admin A lê cenário da própria org e ZERO da org B; fica fora de TABLES porque a policy exige admin+.",
+  },
+  {
+    tabela: "ai_lab_runs",
+    razao:
+      "tests/invariants/ai-lab-zapsign-rls.test.ts — mesmo par A/B, com rodada ligada ao cenário e ao contato.",
+  },
+  {
+    tabela: "ai_lab_run_events",
+    razao:
+      "tests/invariants/ai-lab-zapsign-rls.test.ts — mesmo par A/B, com evento ligado à rodada por FK composta.",
+  },
+  {
+    tabela: "zapsign_document_templates",
+    razao:
+      "tests/invariants/ai-lab-zapsign-rls.test.ts — modelo ZapSign tenant-aware lido por membro da org e invisível ao vizinho.",
+  },
+  {
     tabela: "webhook_sources",
     razao:
       "tests/invariants/webhooks-rls.test.ts (\"manager B (org B) NÃO vê " +

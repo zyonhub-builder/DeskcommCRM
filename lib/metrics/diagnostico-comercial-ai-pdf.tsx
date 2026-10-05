@@ -1,6 +1,9 @@
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+
 import type { AnaliseIaDiagnosticoComercialPayload } from "./diagnostico-comercial-ai";
 
 const COLORS = {
@@ -149,7 +152,7 @@ function dataCurta(iso: string | undefined): string {
   if (!iso) return "periodo nao informado";
   const data = new Date(iso);
   if (Number.isNaN(data.getTime())) return iso;
-  return data.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+  return data.toLocaleDateString(tagDeIdioma(IDIOMA_PADRAO), { timeZone: "UTC" });
 }
 
 function lista(itens: readonly string[]) {

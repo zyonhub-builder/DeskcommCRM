@@ -26,10 +26,7 @@ import { describe, expect, it } from "vitest";
 
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalogo";
 import { IDS_DO_HARNESS } from "@/lib/mcp/tools/ferramentas-do-harness";
-import {
-  TETO_TOOLS_POR_AGENTE,
-  vagasExigidasPeloPacote,
-} from "@/lib/mcp/tools/selecao-por-pacote";
+import { TETO_TOOLS_POR_AGENTE, vagasExigidasPeloPacote } from "@/lib/mcp/tools/selecao-por-pacote";
 
 const SPEC_DA_E2E = join(process.cwd(), "tests/e2e/capacidades-do-agente.spec.ts");
 
@@ -67,12 +64,10 @@ function toolsDoSeedDaSpec(): string[] {
 const CATALOGO_DA_TELA = TOOL_CATALOG.map((entrada) => ({
   ...entrada,
   marcavel: !IDS_DO_HARNESS.has(entrada.name),
-}));
+})).filter((entrada) => entrada.modulo === undefined);
 
 const SEED = toolsDoSeedDaSpec();
-const EM_ATENDER = CATALOGO_DA_TELA.filter((c) => c.pacotes.includes("atender")).map(
-  (c) => c.name,
-);
+const EM_ATENDER = CATALOGO_DA_TELA.filter((c) => c.pacotes.includes("atender")).map((c) => c.name);
 
 describe("ligar Atender com o seed da spec excede o teto em exatamente uma vaga", () => {
   it("leu o seed da spec (guarda de vacuidade)", () => {

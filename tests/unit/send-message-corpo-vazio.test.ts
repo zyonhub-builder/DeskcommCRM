@@ -26,15 +26,17 @@ const corpoDoSend = (() => {
 
 describe("send_message nunca manda bolha em branco", () => {
   it("o execute recusa corpo vazio depois do trim, com erro que ensina o modelo", () => {
-    expect(corpoDoSend).toMatch(/if \(body\.trim\(\) === ''\) \{\s*return \{\s*ok: false,/);
-    expect(corpoDoSend).toContain("code: 'corpo_vazio'");
+    expect(corpoDoSend).toMatch(
+      /if \(body\.trim\(\) === ["']["']\) \{\s*return \{\s*ok: false,/,
+    );
+    expect(corpoDoSend).toMatch(/code:\s*["']corpo_vazio["']/);
   });
 
   it("a recusa vem antes do teto de envios — corpo vazio não gasta a cota do turno", () => {
     // Presença antes de posição: `indexOf` de algo ausente é −1, e −1 é menor
     // que qualquer posição (o modo de falha já pago no teste irmão).
-    const recusa = corpoDoSend.indexOf("'corpo_vazio'");
-    const teto = corpoDoSend.indexOf("'max_sends_per_turn'");
+    const recusa = corpoDoSend.search(/["']corpo_vazio["']/);
+    const teto = corpoDoSend.search(/["']max_sends_per_turn["']/);
     expect(recusa).toBeGreaterThan(-1);
     expect(teto).toBeGreaterThan(-1);
     expect(recusa).toBeLessThan(teto);

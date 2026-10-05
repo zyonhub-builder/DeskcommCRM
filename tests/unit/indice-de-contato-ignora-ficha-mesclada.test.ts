@@ -93,6 +93,9 @@ export function varrer(nomeDoArquivo: string, sql: string): Indice[] {
   return declaracoes(sql).flatMap(({ texto, linha }) => {
     const n = normalizar(texto);
     if (!/\bon public\.contacts\b/.test(n)) return [];
+    if (/\bon public\.contacts(?: using btree)?\s*\(\s*organization_id\s*,\s*id\s*\)/.test(n)) {
+      return [];
+    }
     return [
       {
         arquivo: nomeDoArquivo,

@@ -6,12 +6,14 @@ import { audit } from "@/lib/audit";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { enviarAlertaDeInstancia } from "@/lib/platform/instance-alerts";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth/requirePlatformAdmin", () => ({ requirePlatformAdmin: vi.fn() }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/platform/instance-alerts", async (importActual) => {
   const actual = await importActual<typeof InstanceAlerts>();
@@ -110,6 +112,7 @@ beforeEach(() => {
     remaining: 2,
     reset: Date.now() + 3600_000,
   } as never);
+  vi.mocked(requireSupportWrite).mockResolvedValue(null as never);
 });
 
 describe("Admin Instâncias — auditoria de aviso", () => {

@@ -61,6 +61,8 @@ const TABELAS_NA_CASCATA = [
   "agent_case_events", //  0280 — body/metadata da linha do tempo do caso
   "agent_cases", //        0280 — title/summary/blocker/context_snapshot
   "agent_inbox_items", //  0280 — o aviso da Central que embute o texto do caso
+  "ai_lab_run_events", //  0457 — balões e detalhes observados na rodada de laboratório
+  "ai_lab_runs", //        0457 — telefone, nome, roteiro, relatório e erro da rodada
   "contacts", //           0019 — a linha do titular
   "conversations", //      0019 — metadata e prévia da última mensagem
   "crm_lead_activities", //0071 — payload, metadata e `reason` escrito por LLM
@@ -92,6 +94,7 @@ const TABELAS_NA_CASCATA = [
   // `lgpd-alcanca-prospeccao-de-quem-ja-era-contato.test.ts`.
   "prospecting_candidates",
   "voice_calls", //        0235 — o telefone de quem falou ao telefone
+  "zapsign_documents", //  0457 — signatários e payload do documento vinculado ao titular
 ] as const;
 
 /**

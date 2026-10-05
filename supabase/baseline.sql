@@ -20723,7 +20723,12 @@ declare
 begin
   -- message.received nasce somente do INSERT inbound interno. Um chamador
   -- público não pode reapresentar uma mensagem existente como evento novo.
-  if auth.uid() is not null and p_event_type in ('message.received','appointment.outcome_confirmed') then
+  if auth.uid() is not null and p_event_type in (
+    'message.received',
+    'appointment.outcome_confirmed',
+    'ai.case_opened',
+    'ai.case_closed'
+  ) then
     raise exception 'reserved_message_received' using errcode='42501';
   end if;
   -- Estes campos autorizam efeitos operacionais; não são payload público.
@@ -31390,6 +31395,54 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('entregas_de_aviso_de_caso', v_count);
 
+  -- zapsign_documents — contrato/documento vinculado ao titular (migration 0457).
+  --
+  -- `name`, `signers` e `provider_payload` trazem nomes, e-mails, telefones e
+  -- campos coletados para assinatura. A linha FICA para reconciliação do
+  -- contrato e métricas de assinatura; sai o texto que reidentifica a pessoa e
+  -- o ponteiro direto para o contato.
+  update zapsign_documents set
+    name = 'Documento anonimizado',
+    contact_id = null,
+    signers = '[]'::jsonb,
+    provider_payload = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('zapsign_documents', v_count);
+
+  -- ai_lab_run_events — a linha do tempo pode guardar o balão dito pela pessoa
+  -- e detalhes do efeito observado. Precisa vir ANTES de limpar `ai_lab_runs`,
+  -- porque o vínculo com o contato mora na rodada.
+  update ai_lab_run_events set
+    body = null,
+    details = '{}'::jsonb
+  where organization_id = p_organization_id
+    and run_id in (
+      select id from ai_lab_runs
+        where organization_id = p_organization_id
+          and contact_id = p_contact_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('ai_lab_run_events', v_count);
+
+  -- ai_lab_runs — rodada de laboratório contra um contato real. O telefone é
+  -- obrigatório e validado por formato, então recebe um número sintético válido;
+  -- `script` também precisa seguir array não vazio.
+  update ai_lab_runs set
+    contact_id = null,
+    phone_number = '+10000000000',
+    contact_name = null,
+    script = '[{"body":"[mensagem anonimizada]"}]'::jsonb,
+    report = null,
+    last_error = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('ai_lab_runs', v_count);
+
   -- 8. dense audit row
   insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
   values (
@@ -32977,6 +33030,54 @@ begin
     );
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('entregas_de_aviso_de_caso', v_count);
+
+  -- zapsign_documents — contrato/documento vinculado ao titular (migration 0457).
+  --
+  -- `name`, `signers` e `provider_payload` trazem nomes, e-mails, telefones e
+  -- campos coletados para assinatura. A linha FICA para reconciliação do
+  -- contrato e métricas de assinatura; sai o texto que reidentifica a pessoa e
+  -- o ponteiro direto para o contato.
+  update zapsign_documents set
+    name = 'Documento anonimizado',
+    contact_id = null,
+    signers = '[]'::jsonb,
+    provider_payload = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('zapsign_documents', v_count);
+
+  -- ai_lab_run_events — a linha do tempo pode guardar o balão dito pela pessoa
+  -- e detalhes do efeito observado. Precisa vir ANTES de limpar `ai_lab_runs`,
+  -- porque o vínculo com o contato mora na rodada.
+  update ai_lab_run_events set
+    body = null,
+    details = '{}'::jsonb
+  where organization_id = p_organization_id
+    and run_id in (
+      select id from ai_lab_runs
+        where organization_id = p_organization_id
+          and contact_id = p_contact_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('ai_lab_run_events', v_count);
+
+  -- ai_lab_runs — rodada de laboratório contra um contato real. O telefone é
+  -- obrigatório e validado por formato, então recebe um número sintético válido;
+  -- `script` também precisa seguir array não vazio.
+  update ai_lab_runs set
+    contact_id = null,
+    phone_number = '+10000000000',
+    contact_name = null,
+    script = '[{"body":"[mensagem anonimizada]"}]'::jsonb,
+    report = null,
+    last_error = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('ai_lab_runs', v_count);
 
   -- 8. dense audit row
   insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
@@ -35766,6 +35867,54 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('entregas_de_aviso_de_caso', v_count);
 
+  -- zapsign_documents — contrato/documento vinculado ao titular (migration 0457).
+  --
+  -- `name`, `signers` e `provider_payload` trazem nomes, e-mails, telefones e
+  -- campos coletados para assinatura. A linha FICA para reconciliação do
+  -- contrato e métricas de assinatura; sai o texto que reidentifica a pessoa e
+  -- o ponteiro direto para o contato.
+  update zapsign_documents set
+    name = 'Documento anonimizado',
+    contact_id = null,
+    signers = '[]'::jsonb,
+    provider_payload = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('zapsign_documents', v_count);
+
+  -- ai_lab_run_events — a linha do tempo pode guardar o balão dito pela pessoa
+  -- e detalhes do efeito observado. Precisa vir ANTES de limpar `ai_lab_runs`,
+  -- porque o vínculo com o contato mora na rodada.
+  update ai_lab_run_events set
+    body = null,
+    details = '{}'::jsonb
+  where organization_id = p_organization_id
+    and run_id in (
+      select id from ai_lab_runs
+        where organization_id = p_organization_id
+          and contact_id = p_contact_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('ai_lab_run_events', v_count);
+
+  -- ai_lab_runs — rodada de laboratório contra um contato real. O telefone é
+  -- obrigatório e validado por formato, então recebe um número sintético válido;
+  -- `script` também precisa seguir array não vazio.
+  update ai_lab_runs set
+    contact_id = null,
+    phone_number = '+10000000000',
+    contact_name = null,
+    script = '[{"body":"[mensagem anonimizada]"}]'::jsonb,
+    report = null,
+    last_error = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('ai_lab_runs', v_count);
+
   -- 8. dense audit row
   insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
   values (
@@ -38352,7 +38501,12 @@ declare
 begin
   -- message.received nasce somente do INSERT inbound interno. Um chamador
   -- público não pode reapresentar uma mensagem existente como evento novo.
-  if auth.uid() is not null and p_event_type in ('message.received','appointment.outcome_confirmed') then
+  if auth.uid() is not null and p_event_type in (
+    'message.received',
+    'appointment.outcome_confirmed',
+    'ai.case_opened',
+    'ai.case_closed'
+  ) then
     raise exception 'reserved_message_received' using errcode='42501';
   end if;
   -- Estes campos autorizam efeitos operacionais; não são payload público.
@@ -39671,83 +39825,6 @@ create trigger trg_aviso_da_central_criado
   after insert on public.agent_inbox_items
   for each row execute function public.fn_emit_aviso_da_central();
 
--- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
---
--- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
--- função entra ANTES dele — quem o empurrar para o meio desarma a cura para tudo
--- que vier depois. (O último bloco do arquivo é a chamada das travas do suporte,
--- migration 0274, que não cria função.)
--- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
---
--- A 0108 revogou anon numa LISTA de 8 funções, medida num banco instalado do
--- ZERO. Quem ATUALIZA tem outro estado: o `ALTER DEFAULT PRIVILEGES ... GRANT
--- ALL ON FUNCTIONS TO anon` do corpo deste arquivo grava uma entrada em
--- `pg_default_acl` que fica no catálogo PARA SEMPRE, e a partir daí toda função
--- criada em `public` nasce com EXECUTE para anon — inclusive as deste apêndice.
---
--- Medido numa VPS real (2026-08-07), comparando com o que um install fresco
--- produz: 6 definer expostas a anon e 5 a authenticated, entre elas
--- `fn_decrypt_oauth` — alcançável pela anon key, que vai para o browser.
---
--- Lista conserta o estoque e reabre no próximo `create function`. Esta varredura
--- é auto-curativa e roda DEPOIS de tudo que cria função, então cura no mesmo run
--- em que o defeito nasceria. Desfazer o ALTER DEFAULT PRIVILEGES não serve: ele
--- vem do `pg_dump` do Supabase e é reescrito a cada re-aplicação.
---
--- As duas origens de EXECUTE (a mesma lição da 0108): grant DIRETO a anon, que
--- `revoke from public` não remove; e grant a PUBLIC, do qual anon HERDA, que
--- `revoke from anon` não remove. O privilégio EFETIVO de authenticated e
--- service_role é medido ANTES e devolvido depois — tira anon sem tirar leitura.
-do $$
-declare
-  f record;
-  tinha_auth boolean;
-  tinha_service boolean;
-begin
-  if to_regrole('anon') is null then
-    return;
-  end if;
-
-  for f in
-    select p.oid, p.oid::regprocedure as assinatura
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public'
-       and p.prosecdef
-  loop
-    tinha_auth := to_regrole('authenticated') is not null
-                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
-    tinha_service := to_regrole('service_role') is not null
-                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
-
-    execute format('revoke execute on function %s from public, anon', f.assinatura);
-
-    if tinha_auth then
-      execute format('grant execute on function %s to authenticated', f.assinatura);
-    end if;
-    if tinha_service then
-      execute format('grant execute on function %s to service_role', f.assinatura);
-    end if;
-  end loop;
-end $$;
-
--- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
--- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
--- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
--- e o alvo de cada linha é o valor que um install fresco produz, medido.
-revoke execute on function public.fn_audit_log_row() from authenticated;
-revoke execute on function public.fn_decrypt_oauth(bytea) from authenticated;
-revoke execute on function public.fn_encrypt_oauth(text) from authenticated;
-revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from authenticated;
-revoke execute on function public.fn_update_budget_consumption() from authenticated;
-
-grant execute on function public.fn_audit_log_row() to service_role;
-grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
-grant execute on function public.fn_encrypt_oauth(text) to service_role;
-grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
-grant execute on function public.fn_update_budget_consumption() to service_role;
-
-
 -- ---- Criador provisório sai na entrega (migration 0237) ----
 -- As duas funções acima já saíram com a regra; aqui fica só a COLUNA, que é
 -- o dado que faltava. Idempotente. NÃO há expurgo retroativo, de propósito:
@@ -40452,12 +40529,8 @@ alter table public.tenant_integrations
   add constraint tenant_integrations_provider_check
   check (provider in ('nuvemshop', 'vtex', 'shopify', 'zapsign'));
 
-alter table public.webhook_events_log
-  drop constraint if exists webhook_events_log_provider_check;
-alter table public.webhook_events_log
-  add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy', 'zapsign'
-  ));
+-- `webhook_events_log_provider_check` fica no bloco único da migration 0151.
+-- A 0411 só ampliou o vocabulário dele para `zapsign` naquele bloco.
 
 create unique index if not exists tenant_integrations_org_id_id_idx
   on public.tenant_integrations (organization_id, id);
@@ -41361,7 +41434,18 @@ begin
   ) then
     alter table public.ai_lab_run_events
       add constraint ai_lab_run_events_kind_check
-      check (kind in ('run_started', 'customer_message_sent', 'step_failed', 'observing_started', 'run_completed', 'run_failed', 'run_cancelled', 'report_generated'));
+      check (kind in (
+        'run_started',
+        'customer_message_sent',
+        'step_failed',
+        'observing_started',
+        'run_completed',
+        'run_failed',
+        'run_cancelled',
+        'report_generated',
+        'zapsign_signed_simulated',
+        'analysis_generated'
+      ));
   end if;
 
   if not exists (
@@ -41623,22 +41707,8 @@ alter table public.ai_lab_runs
   add constraint ai_lab_runs_expected_events_shape
   check (jsonb_typeof(expected_events) = 'object');
 
-alter table public.ai_lab_run_events
-  drop constraint if exists ai_lab_run_events_kind_check;
-alter table public.ai_lab_run_events
-  add constraint ai_lab_run_events_kind_check
-  check (kind in (
-    'run_started',
-    'customer_message_sent',
-    'step_failed',
-    'observing_started',
-    'run_completed',
-    'run_failed',
-    'run_cancelled',
-    'report_generated',
-    'zapsign_signed_simulated',
-    'analysis_generated'
-  ));
+-- `ai_lab_run_events_kind_check` fica no bloco único da migration 0449.
+-- A 0450 só ampliou o vocabulário dele naquele bloco.
 
 comment on column public.ai_lab_scenarios.execution_mode is
   'simulated intercepta saidas automaticas do WhatsApp e grava no historico; real_whatsapp envia pelo canal.';
@@ -42226,5 +42296,81 @@ revoke execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, te
   from public, anon, authenticated;
 grant execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[], text[])
   to service_role;
+
+-- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
+--
+-- DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
+-- função entra ANTES dele — quem o empurrar para o meio desarma a cura para tudo
+-- que vier depois. O `notify pgrst` pode ficar depois: ele não cria função nem
+-- devolve `anon`.
+-- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
+--
+-- A 0108 revogou anon numa LISTA de 8 funções, medida num banco instalado do
+-- ZERO. Quem ATUALIZA tem outro estado: o `ALTER DEFAULT PRIVILEGES ... GRANT
+-- ALL ON FUNCTIONS TO anon` do corpo deste arquivo grava uma entrada em
+-- `pg_default_acl` que fica no catálogo PARA SEMPRE, e a partir daí toda função
+-- criada em `public` nasce com EXECUTE para anon — inclusive as deste apêndice.
+--
+-- Medido numa VPS real (2026-08-07), comparando com o que um install fresco
+-- produz: 6 definer expostas a anon e 5 a authenticated, entre elas
+-- `fn_decrypt_oauth` — alcançável pela anon key, que vai para o browser.
+--
+-- Lista conserta o estoque e reabre no próximo `create function`. Esta varredura
+-- é auto-curativa e roda DEPOIS de tudo que cria função, então cura no mesmo run
+-- em que o defeito nasceria. Desfazer o ALTER DEFAULT PRIVILEGES não serve: ele
+-- vem do `pg_dump` do Supabase e é reescrito a cada re-aplicação.
+--
+-- As duas origens de EXECUTE (a mesma lição da 0108): grant DIRETO a anon, que
+-- `revoke from public` não remove; e grant a PUBLIC, do qual anon HERDA, que
+-- `revoke from anon` não remove. O privilégio EFETIVO de authenticated e
+-- service_role é medido ANTES e devolvido depois — tira anon sem tirar leitura.
+do $$
+declare
+  f record;
+  tinha_auth boolean;
+  tinha_service boolean;
+begin
+  if to_regrole('anon') is null then
+    return;
+  end if;
+
+  for f in
+    select p.oid, p.oid::regprocedure as assinatura
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosecdef
+  loop
+    tinha_auth := to_regrole('authenticated') is not null
+                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
+    tinha_service := to_regrole('service_role') is not null
+                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
+
+    execute format('revoke execute on function %s from public, anon', f.assinatura);
+
+    if tinha_auth then
+      execute format('grant execute on function %s to authenticated', f.assinatura);
+    end if;
+    if tinha_service then
+      execute format('grant execute on function %s to service_role', f.assinatura);
+    end if;
+  end loop;
+end $$;
+
+-- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
+-- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
+-- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
+-- e o alvo de cada linha é o valor que um install fresco produz, medido.
+revoke execute on function public.fn_audit_log_row() from authenticated;
+revoke execute on function public.fn_decrypt_oauth(bytea) from authenticated;
+revoke execute on function public.fn_encrypt_oauth(text) from authenticated;
+revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from authenticated;
+revoke execute on function public.fn_update_budget_consumption() from authenticated;
+
+grant execute on function public.fn_audit_log_row() to service_role;
+grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
+grant execute on function public.fn_encrypt_oauth(text) to service_role;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
+grant execute on function public.fn_update_budget_consumption() to service_role;
 
 notify pgrst, 'reload schema';

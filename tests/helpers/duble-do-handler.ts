@@ -29,10 +29,7 @@ interface CadeiaAguardavel extends PromiseLike<{ error: null }> {
   eq: (coluna: string, valor: unknown) => CadeiaAguardavel;
 }
 
-function cadeiaAguardavel(
-  tabela: string,
-  capturas: CapturasDoDubleDoHandler,
-): CadeiaAguardavel {
+function cadeiaAguardavel(tabela: string, capturas: CapturasDoDubleDoHandler): CadeiaAguardavel {
   const cadeia: CadeiaAguardavel = {
     eq: (coluna, valor) => {
       capturas.filtros[tabela]!.push({ coluna, valor });
@@ -106,7 +103,10 @@ export function criarDubleDoHandler(opcoes: OpcoesDoDubleDoHandler): {
             capturas.filtros.channel_sessions!.push({ coluna, valor });
             return cadeia;
           },
-          maybeSingle: async () => ({ data: { metadata: opcoes.channelMetadata ?? {} }, error: null }),
+          maybeSingle: async () => ({
+            data: { metadata: opcoes.channelMetadata ?? {} },
+            error: null,
+          }),
         };
         return cadeia;
       }
@@ -137,6 +137,24 @@ export function criarDubleDoHandler(opcoes: OpcoesDoDubleDoHandler): {
       }
 
       if (tabela === "messages") {
+        const cadeiaDelete = {
+          eq: (coluna: string, valor: unknown) => {
+            capturas.filtros.messages!.push({ coluna, valor });
+            return cadeiaDelete;
+          },
+          in: (coluna: string, valor: unknown) => {
+            capturas.filtros.messages!.push({ coluna, valor });
+            return cadeiaDelete;
+          },
+          neq: (coluna: string, valor: unknown) => {
+            capturas.filtros.messages!.push({ coluna, valor });
+            return cadeiaDelete;
+          },
+          then: (
+            resolve: (value: { error: null }) => unknown,
+            reject?: (reason: unknown) => unknown,
+          ) => Promise.resolve({ error: null }).then(resolve, reject),
+        };
         return {
           insert: (row: LinhaDoDuble) => {
             capturas.inserts.messages!.push(row);
@@ -172,6 +190,7 @@ export function criarDubleDoHandler(opcoes: OpcoesDoDubleDoHandler): {
             };
             return cadeia;
           },
+          delete: () => cadeiaDelete,
         };
       }
 

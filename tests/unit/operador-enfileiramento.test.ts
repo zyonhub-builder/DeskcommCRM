@@ -30,32 +30,36 @@ import { decidirSeEnfileiraOperador } from "@/lib/agent-engine/agent/inbound-tur
 
 describe("decidirSeEnfileiraOperador", () => {
   it("sem agente publicado não enfileira — não há config de papel para ler", () => {
-    expect(
-      decidirSeEnfileiraOperador({ temAgentePublicado: false, papelLigado: false }),
-    ).toEqual({ enfileira: false, porque: "sem_agente" });
+    expect(decidirSeEnfileiraOperador({ temAgentePublicado: false, papelLigado: false })).toEqual({
+      enfileira: false,
+      porque: "sem_agente",
+    });
   });
 
   it("ORDEM: sem agente vence papel ligado — a config lida seria de outro agente", () => {
     // Cobrir os dois caminhos separados não prova a precedência. `papelLigado`
     // true sem agente publicado é um estado que só existe por engano de chamada, e
     // a razão registrada tem de ser a mais específica.
-    expect(
-      decidirSeEnfileiraOperador({ temAgentePublicado: false, papelLigado: true }),
-    ).toEqual({ enfileira: false, porque: "sem_agente" });
+    expect(decidirSeEnfileiraOperador({ temAgentePublicado: false, papelLigado: true })).toEqual({
+      enfileira: false,
+      porque: "sem_agente",
+    });
   });
 
   it("agente publicado com o papel desligado não enfileira, e diz por quê", () => {
-    expect(
-      decidirSeEnfileiraOperador({ temAgentePublicado: true, papelLigado: false }),
-    ).toEqual({ enfileira: false, porque: "papel_desligado" });
+    expect(decidirSeEnfileiraOperador({ temAgentePublicado: true, papelLigado: false })).toEqual({
+      enfileira: false,
+      porque: "papel_desligado",
+    });
   });
 
   it("papel ligado enfileira — guarda de vacuidade da suíte", () => {
     // Sem este caso, uma função que NUNCA enfileira passaria em todos os outros e
     // desligaria o papel para quem o ligou.
-    expect(
-      decidirSeEnfileiraOperador({ temAgentePublicado: true, papelLigado: true }),
-    ).toEqual({ enfileira: true, porque: "ligado" });
+    expect(decidirSeEnfileiraOperador({ temAgentePublicado: true, papelLigado: true })).toEqual({
+      enfileira: true,
+      porque: "ligado",
+    });
   });
 });
 
@@ -81,7 +85,8 @@ describe("o chamador honra a decisão", () => {
   );
 
   it("o enfileiramento do Operador está DENTRO da decisão", () => {
-    const i = fonte.indexOf("kind: 'operator_turn',");
+    const match = /kind:\s*["']operator_turn["'],/.exec(fonte);
+    const i = match?.index ?? -1;
     // Controle positivo: se o enqueue mudou de forma, este caso para de medir o
     // que diz medir — e avisa, em vez de passar vazio.
     expect(i, "não achei o enfileiramento do Operador — ENSINE ESTE TESTE").toBeGreaterThan(0);

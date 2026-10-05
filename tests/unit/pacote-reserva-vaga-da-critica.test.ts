@@ -112,7 +112,9 @@ describe("ligar pacote reserva a vaga das próprias críticas", () => {
     );
     // Controle do instrumento: default vazio faria toda conta abaixo dar zero e
     // o caso ficaria verde por não medir nada.
-    expect(doOnboarding.length, "o agente novo não nasce com capacidade nenhuma").toBeGreaterThan(5);
+    expect(doOnboarding.length, "o agente novo não nasce com capacidade nenhuma").toBeGreaterThan(
+      5,
+    );
 
     const outros = [
       ...new Set(CATALOGO_DA_INSTALACAO_PADRAO.flatMap((c) => c.pacotes as string[])),
@@ -147,9 +149,15 @@ describe("ligar pacote reserva a vaga das próprias críticas", () => {
     // mês — o catálogo foi de 51 para 57 capacidades e o teto de 20 para 25.
     // Número em prosa envelhece calado; a asserção abaixo não, porque deriva as
     // duas pontas do código. Quem quiser o valor de hoje roda o teste.
-    for (const pacote of COM_CRITICA) {
+    const comCriticaDaInstalacaoPadrao = [
+      ...new Set(CATALOGO_DA_INSTALACAO_PADRAO.flatMap((c) => c.pacotes as string[])),
+    ].filter(
+      (p) =>
+        capacidadesCriticasDoPacote(CATALOGO_DA_INSTALACAO_PADRAO as never, p as never).length > 0,
+    );
+    for (const pacote of comCriticaDaInstalacaoPadrao) {
       expect(
-        vagasExigidasPeloPacote([], CATALOGO as never, pacote as never),
+        vagasExigidasPeloPacote([], CATALOGO_DA_INSTALACAO_PADRAO as never, pacote as never),
         `o pacote ${pacote} sozinho já não cabe em ${TETO_TOOLS_POR_AGENTE} — reservar não resolve, o teto é que precisa de decisão`,
       ).toBeLessThanOrEqual(TETO_TOOLS_POR_AGENTE);
     }

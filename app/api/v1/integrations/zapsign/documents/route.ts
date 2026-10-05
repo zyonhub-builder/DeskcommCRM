@@ -220,12 +220,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  const documentoId =
+    typeof resultado.data.documento.id === "string" ? resultado.data.documento.id : null;
+
   await audit({
     action: "zapsign.document_created",
     actorUserId: authz.user.id,
     organizationId: authz.org.orgId,
     resourceType: "zapsign_document",
-    resourceId: String(resultado.data.documento.id),
+    resourceId: documentoId,
     requestId,
     metadata: {
       source: "api",

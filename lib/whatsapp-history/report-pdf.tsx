@@ -1,6 +1,9 @@
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+
 import type { WhatsappHistoryReportFinding, WhatsappHistoryReportRow } from "./report";
 
 const COLORS = {
@@ -245,7 +248,7 @@ function stringArray(value: unknown): string[] {
 
 function formatDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString("pt-BR", {
+    return new Date(iso).toLocaleString(tagDeIdioma(IDIOMA_PADRAO), {
       dateStyle: "short",
       timeStyle: "short",
       hour12: false,

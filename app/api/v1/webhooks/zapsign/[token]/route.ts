@@ -199,9 +199,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     action: "zapsign.webhook_received",
     organizationId: integration.organization_id,
     resourceType: "zapsign_webhook",
-    resourceId: applied.data.document_token ?? undefined,
+    resourceId: null,
     requestId,
-    metadata: { event_type: eventType, external_id: ext },
+    metadata: {
+      event_type: eventType,
+      external_id: ext,
+      document_token: applied.data.document_token ?? null,
+    },
   });
 
   return ok({ accepted: true }, { requestId });

@@ -48,10 +48,7 @@ describe("resolveBranding", () => {
 
 describe("guarda de white-label (self-host)", () => {
   const branding = fs.readFileSync(path.join(RAIZ, "lib/branding.ts"), "utf8");
-  const publicEnvScript = fs.readFileSync(
-    path.join(RAIZ, "app/public-env-script.tsx"),
-    "utf8",
-  );
+  const publicEnvScript = fs.readFileSync(path.join(RAIZ, "app/public-env-script.tsx"), "utf8");
   const layoutRaiz = fs.readFileSync(path.join(RAIZ, "app/layout.tsx"), "utf8");
 
   it("não usa prefixo NEXT_PUBLIC_ para a marca", () => {
@@ -101,7 +98,7 @@ describe("guarda de white-label (self-host)", () => {
       layoutRaiz.match(/await marcaResolvida\(\)/g) ?? [],
       "os quatro consumidores do layout raiz são `generateMetadata` (aba), " +
         "`EstiloDaMarca` (cor), `MarcaNoNavegador` (`window.__PUBLIC_ENV__`) e " +
-        "`MarcaDosClientComponents` (o contexto que os `\"use client\"` leem). " +
+        '`MarcaDosClientComponents` (o contexto que os `"use client"` leem). ' +
         "Consumidor a mais é legítimo — atualize o número. Consumidor a MENOS " +
         "significa que alguém voltou a montar a pilha por fora.",
     ).toHaveLength(4);
@@ -225,7 +222,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     categoria: "PROTOCOLO",
     motivo:
       "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
-    marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature", "x-deskcomm-signature"],
+    marcas: [
+      "x-deskcomm-event",
+      "x-deskcomm-signature",
+      "x-deskcomm-signature",
+      "x-deskcomm-signature",
+    ],
   },
   "lib/mcp/server.ts": {
     categoria: "PROTOCOLO",
@@ -244,6 +246,18 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     motivo:
       "X-Client-Id enviado ao processo WaCalls (spec 18) — identifica o worker como o operador dono da conexão SSE nos logs e na lógica de exclusividade de chamada dele. Não é texto de interface e nunca chega ao usuário",
     marcas: ["deskcomm-worker"],
+  },
+  "lib/channels/laboratorio.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "chave técnica `deskcommLab` escrita dentro do envelope WAHA simulado do laboratório. O ingest lê a mesma chave em lib/waha/ingest.ts; renomear um lado sem o outro faz o laboratório perder o contexto da rodada",
+    marcas: ["deskcommlab"],
+  },
+  "lib/waha/ingest.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "chave técnica `deskcommLab` lida do payload WAHA do laboratório. É o par do escritor em lib/channels/laboratorio.ts e não é texto de interface nem marca visível ao cliente",
+    marcas: ["deskcommlab"],
   },
   "lib/nuvemshop/config.ts": {
     categoria: "PROTOCOLO",
@@ -403,7 +417,12 @@ function marcasNoTexto(fonte: string): string[] {
     for (const casada of linha.matchAll(/[\w@.-]*deskcomm[\w@.-]*/gi)) {
       // Pontuação encostada (o ponto final de "no DeskcommCRM.") não faz parte
       // do identificador e faria a lista mudar por causa de uma vírgula.
-      achadas.push(casada[0].toLowerCase().replace(/^[.-]+/, "").replace(/[.-]+$/, ""));
+      achadas.push(
+        casada[0]
+          .toLowerCase()
+          .replace(/^[.-]+/, "")
+          .replace(/[.-]+$/, ""),
+      );
     }
   }
   return achadas.sort();
@@ -573,7 +592,9 @@ describe("catraca de marca hardcoded", () => {
       const atual = encontrado.get(arquivo) ?? [];
       const congelado = [...entrada.marcas].sort();
       if (JSON.stringify(atual) !== JSON.stringify(congelado)) {
-        divergentes.push(`  ${arquivo}\n    lista: ${JSON.stringify(congelado)}\n    disco: ${JSON.stringify(atual)}`);
+        divergentes.push(
+          `  ${arquivo}\n    lista: ${JSON.stringify(congelado)}\n    disco: ${JSON.stringify(atual)}`,
+        );
       }
     }
     expect(
@@ -601,7 +622,10 @@ describe("catraca de marca hardcoded", () => {
     const ruins = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => !validas.includes(e.categoria) || e.motivo.trim().length < 40)
       .map(([f]) => f);
-    expect(ruins, `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`).toEqual([]);
+    expect(
+      ruins,
+      `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("a Fase 4 fechou: sobra uma dívida, e ela declara por que sobrou", () => {
@@ -627,7 +651,10 @@ describe("catraca de marca hardcoded", () => {
     const semFase = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => (e.categoria === "DIVIDA") !== (typeof e.fase === "number"))
       .map(([f]) => f);
-    expect(semFase, `DIVIDA sem fase, ou fase declarada onde não é dívida:\n  ${semFase.join("\n  ")}`).toEqual([]);
+    expect(
+      semFase,
+      `DIVIDA sem fase, ou fase declarada onde não é dívida:\n  ${semFase.join("\n  ")}`,
+    ).toEqual([]);
   });
 });
 
@@ -701,7 +728,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     for (const { arquivo } of ALVOS) {
       expect(fs.existsSync(path.join(RAIZ, arquivo)), `${arquivo} sumiu`).toBe(true);
     }
-    for (const modelo of ["supabase/templates/confirmation.html", "supabase/templates/recovery.html"]) {
+    for (const modelo of [
+      "supabase/templates/confirmation.html",
+      "supabase/templates/recovery.html",
+    ]) {
       const texto = fs.readFileSync(path.join(RAIZ, modelo), "utf8");
       expect(texto, `${modelo} não substitui a marca`).toContain("__APP_NAME__");
       expect(texto, `${modelo} não substitui o accent`).toContain("__ACCENT__");
@@ -710,13 +740,17 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("comentário de HTML não conta, e `-->` no meio da linha não engole o resto", () => {
     expect(marcasNoTexto(semComentariosHtml("<!-- fala do DeskcommCRM -->"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->"))).toEqual([]);
+    expect(
+      marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->")),
+    ).toEqual([]);
     // O caso que a regra de `//` erraria: marca REAL depois do fecho.
     expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no DeskcommCRM"))).toEqual([
       "deskcommcrm",
     ]);
     // E a marca fora de comentário nenhum continua contando.
-    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual([
+      "deskcommcrm",
+    ]);
   });
 
   it("comentário de TOML não conta, mas `#` dentro de string não vira comentário", () => {
@@ -724,7 +758,9 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # DeskcommCRM'))).toEqual([
       "deskcommcrm",
     ]);
-    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual([
+      "deskcommcrm",
+    ]);
   });
 
   it("nenhum arquivo do GoTrue fixa a marca fora da lista", () => {
@@ -739,7 +775,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("a lista do GoTrue não guarda arquivo que já não tem marca", () => {
     const obsoletos = Object.keys(CONGELADO_SUPABASE).filter((f) => !encontradoAqui.has(f));
-    expect(obsoletos, `apague a linha destes de CONGELADO_SUPABASE:\n  ${obsoletos.join("\n  ")}`).toEqual([]);
+    expect(
+      obsoletos,
+      `apague a linha destes de CONGELADO_SUPABASE:\n  ${obsoletos.join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("arquivo congelado do GoTrue não mudou de conjunto sem a lista acompanhar", () => {
@@ -806,7 +845,8 @@ type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   "datamanager.googleapis.com": {
     categoria: "FORNECEDOR",
-    motivo: "endpoint oficial da Google Data Manager API: recebe conversões e consulta o processamento na conta autorizada pela própria organização. O destino pertence ao fornecedor e não à instalação do CRM.",
+    motivo:
+      "endpoint oficial da Google Data Manager API: recebe conversões e consulta o processamento na conta autorizada pela própria organização. O destino pertence ao fornecedor e não à instalação do CRM.",
   },
   // ── localização compartilhada: o link que abre o pino do cliente ──
   "maps.google.com": {
@@ -841,6 +881,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo:
       "endpoint da API da Anthropic (contagem de tokens e a prova de credencial da tela de configuração). Mesma razão: é o destino, não texto de interface.",
+  },
+  "api.elevenlabs.io": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint oficial da ElevenLabs: valida a chave listando vozes e gera o áudio de WhatsApp a partir do texto já decidido pelo agente. O código fala com este host usando a credencial da própria organização.",
   },
   "openrouter.ai": {
     categoria: "FORNECEDOR",
@@ -931,6 +976,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "painel onde o usuário gera a PRÓPRIA chave do Jev (`ondePegarAChave` de PROVEDORES_DE_DECISAO em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
   },
+  "elevenlabs.io": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel onde o usuário gera a PRÓPRIA chave da ElevenLabs para áudio de saída no WhatsApp (`ondePegarAChave` em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
+  },
   "platform.deepseek.com": {
     categoria: "CONSOLE",
     motivo:
@@ -981,6 +1031,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "PLATAFORMA",
     motivo:
       "host do Google Meet aceito na validação do link de reunião (`meetVideoUrl`): é entrada que o produto CONFERE, não endereço que ele busca. Sem a linha, qualquer host passaria por link de reunião.",
+  },
+  "app.zapsign.com.br": {
+    categoria: "PLATAFORMA",
+    motivo:
+      "host público da ZapSign usado para montar o link de assinatura/verificação do documento a partir do token do assinante. O produto não chama este host; ele é aberto por quem assina ou confere o documento.",
+  },
+  "schemas.openxmlformats.org": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "namespace XML obrigatório do formato XLSX gerado em lib/whatsapp-history/xlsx.ts. Não é host chamado pela aplicação; é identificador de esquema dentro do arquivo que o Excel/LibreOffice lê.",
   },
   "deskcomm.app": {
     categoria: "PROTOCOLO",
@@ -1135,11 +1195,16 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita: painel de chaves da Requesty, o mesmo caso dos outros
       // CONSOLE (o link "Onde pegar a chave" da tela de Credenciais).
       "app.requesty.ai",
+      // Link público da ZapSign gerado para assinatura/verificação de documento:
+      // o produto não chama o host; quem abre é o assinante ou operador.
+      "app.zapsign.com.br",
       "console.anthropic.com",
       // Decisão escrita: é o painel de chaves do Jev, o mesmo caso dos outros
       // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.
       "console.typesafe.ai",
       "deskcomm.app",
+      // Painel onde o operador pega a chave da ElevenLabs para voz de saída.
+      "elevenlabs.io",
       // Link que abre o pino que o CLIENTE mandou (`lib/messaging/localizacao.ts`).
       // Mesma natureza do `wa.me` abaixo: o produto não fala com o host, quem
       // abre é o celular do atendente. Crescimento escrito, como a regra pede.
@@ -1157,6 +1222,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // protocolo manda. Entrou aqui porque a régua nova do #914 passou a
       // enxergá-lo, e não porque o produto ganhou host novo.
       "s.whatsapp.net",
+      // Namespace XML do formato XLSX exportado. É identificador de esquema,
+      // não destino de rede.
+      "schemas.openxmlformats.org",
       "tusitio.com",
       // Exemplo de link do WhatsApp gerado pela tela de Conversões (#924). Está
       // aqui, e não em FORNECEDOR, porque o produto NÃO fala com esse host: quem

@@ -31,7 +31,10 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     storage: {
       from: () => ({
-        createSignedUrl: async () => ({ data: { signedUrl: "https://signed.example/a.jpg" }, error: null }),
+        createSignedUrl: async () => ({
+          data: { signedUrl: "https://signed.example/a.jpg" },
+          error: null,
+        }),
       }),
     },
   }),
@@ -109,9 +112,10 @@ describe("envio por token respeita a janela de 24h", () => {
 
     const erro = await sendMessageHandler(supabase, ctxToken, texto()).catch((e) => e);
 
-    expect(erro, "o envio não foi recusado — voltou 201 para a plataforma recusar depois").toBeInstanceOf(
-      ApiError,
-    );
+    expect(
+      erro,
+      "o envio não foi recusado — voltou 201 para a plataforma recusar depois",
+    ).toBeInstanceOf(ApiError);
     expect((erro as ApiError).status).toBe(422);
     expect((erro as ApiError).code).toBe("janela_fechada");
     expect((erro as ApiError).details).toMatchObject({
@@ -178,6 +182,8 @@ describe("envio por token respeita a janela de 24h", () => {
   });
 
   it("canal por QR, sem janela: nada muda (o texto segue sendo aceito)", async () => {
+    vi.stubEnv("WAHA_API_BASE_URL", "");
+    vi.stubEnv("WAHA_API_KEY", "");
     const { supabase, capturas } = criarDubleDoHandler({
       conversation: conversa({ provider: "waha", lastInboundAt: null }),
     });

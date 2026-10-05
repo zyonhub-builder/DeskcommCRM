@@ -341,7 +341,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {t(
-          "O teste manda uma mensagem de verdade e conta no limite diário do número que envia. Salve antes de testar.",
+          "O teste manda uma mensagem de verdade e conta no limite diário desse número. Salve antes de testar.",
         )}
       </p>
     </Card>

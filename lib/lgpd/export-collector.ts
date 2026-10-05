@@ -444,6 +444,55 @@ export interface CampaignSuppressionRow {
   created_at: string;
 }
 
+/** Rodada do laboratório de IA feita contra um contato real. */
+export interface AiLabRunRow {
+  id: string;
+  scenario_id: string | null;
+  status: string;
+  phone_number: string;
+  contact_name: string | null;
+  script: unknown;
+  report: unknown;
+  last_error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+/** Linha do tempo da rodada do laboratório ligada ao titular. */
+export interface AiLabRunEventRow {
+  id: string;
+  run_id: string;
+  kind: string;
+  step_index: number | null;
+  body: string | null;
+  details: unknown;
+  happened_at: string;
+  created_at: string;
+}
+
+/**
+ * Documento ZapSign ligado ao titular.
+ *
+ * O payload bruto do provedor e `signers` ficam fora: podem carregar token, URL,
+ * anexo e dado pessoal de terceiros. O export entrega o registro reconhecível do
+ * titular e o estado do documento, sem despejar a resposta externa inteira.
+ */
+export interface ZapsignDocumentRow {
+  id: string;
+  external_id: string | null;
+  name: string;
+  status: string;
+  source: string;
+  last_event_type: string | null;
+  last_event_at: string | null;
+  signed_at: string | null;
+  refused_at: string | null;
+  expired_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExportPayload {
   request_id: string;
   organization_id: string;
@@ -577,6 +626,9 @@ export interface ExportPayload {
     feedback: unknown;
     created_at: string;
   }>;
+  ai_lab_runs?: AiLabRunRow[];
+  ai_lab_run_events?: AiLabRunEventRow[];
+  zapsign_documents?: ZapsignDocumentRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1168,6 +1220,66 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Laboratório de IA — contato direto em `ai_lab_runs`, e eventos derivados das
+  // rodadas do titular. O que a anonimização redige aqui (telefone, nome, roteiro,
+  // relatório, erro, corpo e detalhes) também precisa ser visitado no acesso.
+  const ai_lab_runs: AiLabRunRow[] = [];
+  const ai_lab_run_events: AiLabRunEventRow[] = [];
+  if (contactId) {
+    const pageSize = 500;
+    const refBatchSize = 100;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await admin
+        .from("ai_lab_runs")
+        .select(
+          "id, scenario_id, status, phone_number, contact_name, script, report, last_error, started_at, completed_at, created_at",
+        )
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      if (error) throw error;
+      ai_lab_runs.push(...((data ?? []) as unknown as AiLabRunRow[]));
+      if (!data || data.length < pageSize) break;
+    }
+
+    const runIds = ai_lab_runs.map((run) => run.id);
+    for (let batch = 0; batch < runIds.length; batch += refBatchSize) {
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await admin
+          .from("ai_lab_run_events")
+          .select("id, run_id, kind, step_index, body, details, happened_at, created_at")
+          .eq("organization_id", organizationId)
+          .in("run_id", runIds.slice(batch, batch + refBatchSize))
+          .order("id")
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        ai_lab_run_events.push(...((data ?? []) as unknown as AiLabRunEventRow[]));
+        if (!data || data.length < pageSize) break;
+      }
+    }
+  }
+
+  // Documentos ZapSign do titular. Sem payload bruto nem signers: a existência e
+  // o estado do documento entram no acesso; segredo e dado de terceiros, não.
+  const zapsign_documents: ZapsignDocumentRow[] = [];
+  if (contactId) {
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin
+        .from("zapsign_documents")
+        .select(
+          "id, external_id, name, status, source, last_event_type, last_event_at, signed_at, refused_at, expired_at, created_at, updated_at",
+        )
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + 499);
+      if (error) throw error;
+      zapsign_documents.push(...((data ?? []) as unknown as ZapsignDocumentRow[]));
+      if (!data || data.length < 500) break;
+    }
+  }
+
   // Audit log extract (best-effort: rows where metadata.contact_id matches).
   let audit_log_extract: AuditRow[] = [];
   if (contactId) {
@@ -1562,6 +1674,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     campaign_suppressions,
     conversation_drafts,
     contact_field_proposals,
+    ai_lab_runs,
+    ai_lab_run_events,
+    zapsign_documents,
   };
 }
 
@@ -1606,5 +1721,8 @@ function emptyPayload(
     avisos_de_caso: [],
     campaign_recipients: [],
     campaign_suppressions: [],
+    ai_lab_runs: [],
+    ai_lab_run_events: [],
+    zapsign_documents: [],
   };
 }

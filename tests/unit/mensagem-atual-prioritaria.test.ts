@@ -58,11 +58,24 @@ describe("mensagem atual do cliente", () => {
       conversation_id: "22222222-2222-4222-8222-222222222222",
       last_human_decision: null,
       messages: [
-        { direction: "inbound", body: "registro concorrente sem conteúdo", sent_at: "2026-09-06T18:10:00-04:00" },
+        {
+          direction: "inbound",
+          body: "registro concorrente sem conteúdo",
+          sent_at: "2026-09-06T18:10:00-04:00",
+        },
       ],
     };
 
-    const abertura = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", "Quero agendar com a Drª Mara.");
+    const abertura = buildOpeningMessage(
+      null,
+      null,
+      contexto,
+      "sem notas",
+      false,
+      [],
+      "",
+      "Quero agendar com a Drª Mara.",
+    );
 
     expect(abertura).toContain('"texto":"Quero agendar com a Drª Mara."');
     expect(abertura).not.toContain('"texto":"registro concorrente sem conteúdo"');
@@ -113,10 +126,7 @@ describe("barreira contra falso aviso de mensagem vazia", () => {
  * verdes e devolve o produto ao estado em que o cliente recebe a frase falsa.
  */
 describe("a barreira está no caminho do envio, não numa função de ninguém", () => {
-  const FONTE = readFileSync(
-    join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
-    "utf8",
-  );
+  const FONTE = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
   const corpoDoSend = (() => {
     const i = FONTE.indexOf("send_message: tool({");
     const j = FONTE.indexOf("update_lead_state: tool({", i);
@@ -127,7 +137,7 @@ describe("a barreira está no caminho do envio, não numa função de ninguém",
 
   it("o veto roda dentro de send_message.execute", () => {
     expect(corpoDoSend).toMatch(/claimsCurrentInboundIsEmpty\(body, mensagemDoJob\)/);
-    expect(corpoDoSend).toContain("'false_empty_inbound'");
+    expect(corpoDoSend).toMatch(/["']false_empty_inbound["']/);
   });
 
   it("o veto tem TETO — persistir solta o envio, com registro", () => {
@@ -138,7 +148,7 @@ describe("a barreira está no caminho do envio, não numa função de ninguém",
     expect(corpoDoSend).toMatch(/falseEmptyInboundVetoCount \+= 1/);
     expect(corpoDoSend).toMatch(/falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO/);
     expect(corpoDoSend).toMatch(
-      /runLog\.warn\(\s*'fail-safe do gate de falso-vazio[\s\S]{0,160}?vetos: falseEmptyInboundVetoCount/,
+      /runLog\.warn\(\s*["']fail-safe do gate de falso-vazio[\s\S]{0,160}?vetos: falseEmptyInboundVetoCount/,
     );
   });
 

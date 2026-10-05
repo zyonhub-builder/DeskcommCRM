@@ -12,6 +12,8 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { STATUS_SAUDAVEL } from "@/lib/channels/health";
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 
 export type TipoDeDestinoDoAvisoDeInstancia = "phone" | "group";
@@ -144,7 +146,12 @@ export async function enviarAlertaDeInstancia(
       reason: err instanceof Error ? err.message : "erro",
       requestId: entrada.requestId,
     });
-    return { status: "failed", reason: "settings_unreadable", externalId: null, recipientMask: null };
+    return {
+      status: "failed",
+      reason: "settings_unreadable",
+      externalId: null,
+      recipientMask: null,
+    };
   }
 
   const recipientMask = mascararDestinoDoAvisoDeInstancia(cfg?.recipient, cfg?.recipient_kind);
@@ -284,7 +291,11 @@ export async function enviarAlertaDeInstancia(
   }
 
   const pacing = await criarPacingDoCanal(admin);
-  const decisao = await pacing.decide(cfg.channel_organization_id, cfg.channel_session_id, observadoEm);
+  const decisao = await pacing.decide(
+    cfg.channel_organization_id,
+    cfg.channel_session_id,
+    observadoEm,
+  );
   if (!decisao.liberado) {
     return registrarEntrega(admin, entrada, {
       status: "skipped",
@@ -395,9 +406,17 @@ async function montarMensagemDoAvisoDeInstancia(
 
   const [orgNome, pendentes] = await Promise.all([
     nomeDaOrganizacao(admin, entrada.affectedOrganizationId ?? null),
-    contarConversasPendentes(admin, entrada.affectedOrganizationId ?? null, entrada.affectedChannelSessionId ?? null),
+    contarConversasPendentes(
+      admin,
+      entrada.affectedOrganizationId ?? null,
+      entrada.affectedChannelSessionId ?? null,
+    ),
   ]);
-  const conexao = entrada.displayName || entrada.phoneNumber || entrada.affectedChannelSessionId || "conexão sem nome";
+  const conexao =
+    entrada.displayName ||
+    entrada.phoneNumber ||
+    entrada.affectedChannelSessionId ||
+    "conexão sem nome";
   const titulo =
     entrada.eventKind === "recovered"
       ? "Instância voltou a funcionar"
@@ -414,7 +433,9 @@ async function montarMensagemDoAvisoDeInstancia(
     `Conexão: ${conexao}`,
     `Status: ${entrada.status ?? "desconhecido"}`,
     entrada.statusReason ? `Detalhe: ${entrada.statusReason}` : null,
-    pendentes > 0 ? `Conversas pendentes há mais de 10 min: ${pendentes}` : "Conversas pendentes há mais de 10 min: 0",
+    pendentes > 0
+      ? `Conversas pendentes há mais de 10 min: ${pendentes}`
+      : "Conversas pendentes há mais de 10 min: 0",
     `Observado em: ${formatarDataPt(observadoEm)}`,
     "",
     detalhe,
@@ -423,7 +444,10 @@ async function montarMensagemDoAvisoDeInstancia(
     .join("\n");
 }
 
-async function nomeDaOrganizacao(admin: SupabaseClient, organizationId: string | null): Promise<string> {
+async function nomeDaOrganizacao(
+  admin: SupabaseClient,
+  organizationId: string | null,
+): Promise<string> {
   if (!organizationId) return "Instalação";
   const { data } = await admin
     .from("organizations")
@@ -507,7 +531,7 @@ async function registrarEntrega(
 }
 
 function formatarDataPt(data: Date): string {
-  return data.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return data.toLocaleString(tagDeIdioma(IDIOMA_PADRAO), { timeZone: "America/Sao_Paulo" });
 }
 
 function tabelaSemTipos(admin: SupabaseClient, nome: string) {

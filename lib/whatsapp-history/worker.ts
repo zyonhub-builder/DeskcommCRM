@@ -533,16 +533,20 @@ async function prepararChats(
 
 async function inserirMensagens(
   admin: AdminClient,
+  organizationId: string,
   rows: Array<Record<string, unknown>>,
 ): Promise<number> {
   if (rows.length === 0) return 0;
-  const { error } = await admin.from("whatsapp_history_messages").insert(rows);
+  const linhas = rows.map((row) => ({ ...row, organization_id: organizationId }));
+  const { error } = await admin.from("whatsapp_history_messages").insert(linhas);
   if (!error) return rows.length;
   if (error.code !== "23505") throw error;
 
   let inserted = 0;
-  for (const row of rows) {
-    const result = await admin.from("whatsapp_history_messages").insert(row);
+  for (const row of linhas) {
+    const result = await admin
+      .from("whatsapp_history_messages")
+      .insert({ ...row, organization_id: organizationId });
     if (!result.error) {
       inserted += 1;
       continue;
@@ -634,7 +638,7 @@ async function processarChat(
     });
   }
 
-  const inseridas = await inserirMensagens(admin, rows);
+  const inseridas = await inserirMensagens(admin, job.organization_id, rows);
   const proximoOffset = offset + mensagens.length;
   const terminou = mensagens.length < limit || proximoOffset >= job.max_messages_per_chat;
   await admin

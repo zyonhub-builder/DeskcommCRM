@@ -199,9 +199,24 @@ describe("a sétima cópia não nasce", () => {
       motivo: "apelido do CANAL no aviso de saúde; `channel_sessions` não tem `name`",
     },
     {
+      arquivo: "app/api/v1/admin/instances/route.ts",
+      trecho: "label: row.display_name || row.phone_number || row.id,",
+      motivo: "rótulo de CANAL na tela global de instâncias, não de contato",
+    },
+    {
+      arquivo: "app/api/v1/admin/instances/route.ts",
+      trecho: "return row?.display_name || row?.legal_name || null;",
+      motivo: "nome de ORGANIZAÇÃO no admin de instâncias, não de contato",
+    },
+    {
       arquivo: "app/app/contacts/[id]/_client.tsx",
       trecho: '{contact.display_name ?? "—"}',
       motivo: "a ficha mostra a COLUNA `display_name` com rótulo próprio, logo abaixo de `name`",
+    },
+    {
+      arquivo: "app/app/whatsapp-history/_client.tsx",
+      trecho: "{model.display_name || model.model_id}",
+      motivo: "rótulo de MODELO de IA no diagnóstico de histórico",
     },
     {
       arquivo: "components/connections/CanalParceiroClient.tsx",

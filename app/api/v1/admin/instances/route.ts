@@ -186,7 +186,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     }
   }
 
-  const { error } = await tabelaSemTipos(admin, "platform_instance_alert_settings").upsert(
+  const { error } = await admin.from("platform_instance_alert_settings" as never).upsert(
     {
       id: 1,
       enabled: input.enabled,

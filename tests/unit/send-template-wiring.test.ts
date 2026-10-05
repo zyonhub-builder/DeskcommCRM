@@ -4,7 +4,11 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { AGENT_TOOL_DEFS } from "@/lib/agent-engine/agent/inbound-turn";
-import { CHANNEL_PROVIDER_META, CHANNEL_PROVIDER_WAHA, capabilitiesOf } from "@/lib/channels/capabilities";
+import {
+  CHANNEL_PROVIDER_META,
+  CHANNEL_PROVIDER_WAHA,
+  capabilitiesOf,
+} from "@/lib/channels/capabilities";
 
 /**
  * A LIGAÇÃO do `send_template` no turno do agente.
@@ -96,10 +100,12 @@ describe("send_template — o execute não pode virar rota de fuga dos guardrail
 
   it("o veto da cadeia devolve erro ao modelo em vez de enviar assim mesmo", () => {
     const corpo = corpoDoExecute();
-    expect(corpo).toMatch(/chain\.status === 'vetoed'/);
+    expect(corpo).toMatch(/chain\.status === ["']vetoed["']/);
     // O `return` do veto vem ANTES de qualquer uso do outcome: um veto que caísse no
     // caminho de sucesso reportaria "enviada" para algo que não saiu.
-    expect(corpo.indexOf("chain.status === 'vetoed'")).toBeLessThan(corpo.indexOf("outcomes.push"));
+    expect(corpo.search(/chain\.status === ["']vetoed["']/)).toBeLessThan(
+      corpo.indexOf("outcomes.push"),
+    );
   });
 
   it("o envio carrega o template como template, não como texto", () => {
@@ -122,7 +128,9 @@ describe("send_template — o execute não pode virar rota de fuga dos guardrail
     expect(corpo).toMatch(/template_nao_aprovado/);
     // Selecionar `status` é o que torna a checagem possível: sem a coluna, o gate
     // acima compilaria contra `undefined` e aprovaria tudo.
-    expect(corpo).toMatch(/definicaoNaConexao<[\s\S]*?\['components', 'parameter_format', 'status'\]/);
+    expect(corpo).toMatch(
+      /definicaoNaConexao<[\s\S]*?\[["']components["'], ["']parameter_format["'], ["']status["']\]/,
+    );
     // E a definição é a DESTA conexão (lib/channels/linha-do-espelho.ts): sem o
     // escopo, o agente conferia o modelo de outro número com o mesmo nome.
     expect(corpo).toMatch(/channelSessionId: input\.channelSessionId/);
@@ -163,7 +171,9 @@ describe("send_template — a definição que o modelo lê", () => {
   });
 
   it("recusa nome vazio", () => {
-    expect(schema.safeParse({ template_name: "", language: "pt_BR", values: {} }).success).toBe(false);
+    expect(schema.safeParse({ template_name: "", language: "pt_BR", values: {} }).success).toBe(
+      false,
+    );
   });
 
   it("a descrição diz QUANDO usar — tool sem gatilho o modelo usa na hora errada", () => {
@@ -184,7 +194,13 @@ describe("a regra de disparabilidade tem UM dono", () => {
     const { bindingState, isStatusSendable } = await import("@/lib/channels/meta/template-binding");
     const binding = { name: "t", language: "pt_BR", contractHash: "h", values: {} };
     for (const status of ["APPROVED", "PENDING", "REJECTED", "PAUSED", "DISABLED", "IN_APPEAL"]) {
-      const viaBind = bindingState(binding, { name: binding.name, language: binding.language, contractHash: "h", status }) !== "not_approved";
+      const viaBind =
+        bindingState(binding, {
+          name: binding.name,
+          language: binding.language,
+          contractHash: "h",
+          status,
+        }) !== "not_approved";
       expect(isStatusSendable(status), `divergiram em ${status}`).toBe(viaBind);
     }
   });

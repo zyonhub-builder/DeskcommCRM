@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 
 type PassoDaJornada = {
@@ -227,9 +229,9 @@ const FORMULARIO_INICIAL = {
 
 type FormularioLaboratorio = typeof FORMULARIO_INICIAL;
 
-function formatarData(valor: string | null): string {
+function formatarData(valor: string | null, tagDoIdioma: string): string {
   if (!valor) return "-";
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat(tagDoIdioma, {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(valor));
@@ -264,7 +266,7 @@ function rotuloModoExecucao(mode: ModoExecucaoLaboratorio): string {
   return mode === "simulated" ? "Simulação sem WhatsApp" : "WhatsApp real";
 }
 
-function relatorioMarkdown(run: RodadaDaJornada): string {
+function relatorioMarkdown(run: RodadaDaJornada, tagDoIdioma: string): string {
   const report = run.report;
   if (!report) return "";
   const analysis = report.ai_analysis;
@@ -313,14 +315,15 @@ function relatorioMarkdown(run: RodadaDaJornada): string {
       : []),
     "## Transcrição",
     ...report.transcript.map(
-      (message) => `- ${formatarData(message.at)} · ${message.actor}: ${message.body ?? ""}`,
+      (message) =>
+        `- ${formatarData(message.at, tagDoIdioma)} · ${message.actor}: ${message.body ?? ""}`,
     ),
   ];
   return `${linhas.join("\n")}\n`;
 }
 
-function baixarRelatorio(run: RodadaDaJornada): void {
-  const markdown = relatorioMarkdown(run);
+function baixarRelatorio(run: RodadaDaJornada, tagDoIdioma: string): void {
+  const markdown = relatorioMarkdown(run, tagDoIdioma);
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -331,6 +334,8 @@ function baixarRelatorio(run: RodadaDaJornada): void {
 }
 
 export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolean }) {
+  const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const [dados, setDados] = useState<DadosDoLaboratorio | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -356,7 +361,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
         agent_id: atual.agent_id || primeiroAgente,
       }));
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui carregar o laboratório.");
+      setErro(err instanceof Error ? err.message : t("Não consegui carregar o laboratório."));
     }
   }, [habilitado]);
 
@@ -423,7 +428,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       setErro(null);
       await carregar();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui salvar o cenário.");
+      setErro(err instanceof Error ? err.message : t("Não consegui salvar o cenário."));
     } finally {
       setSalvando(false);
     }
@@ -452,7 +457,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       }));
       setErro(null);
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui gerar a bateria com IA.");
+      setErro(err instanceof Error ? err.message : t("Não consegui gerar a bateria com IA."));
     } finally {
       setGerandoRoteiro(false);
     }
@@ -467,7 +472,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       );
       await carregar();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui analisar a rodada com IA.");
+      setErro(err instanceof Error ? err.message : t("Não consegui analisar a rodada com IA."));
     } finally {
       setAnalyzingRunId(null);
     }
@@ -483,7 +488,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       setErro(null);
       await carregar();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui iniciar a rodada.");
+      setErro(err instanceof Error ? err.message : t("Não consegui iniciar a rodada."));
     } finally {
       setRodando(false);
     }
@@ -498,7 +503,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       );
       await carregar();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui gerar o relatório.");
+      setErro(err instanceof Error ? err.message : t("Não consegui gerar o relatório."));
     } finally {
       setCompletingRunId(null);
     }
@@ -513,7 +518,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       );
       await carregar();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não consegui cancelar a rodada.");
+      setErro(err instanceof Error ? err.message : t("Não consegui cancelar a rodada."));
     } finally {
       setCancelingRunId(null);
     }
@@ -523,9 +528,9 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
     return (
       <main className="mx-auto w-full max-w-4xl p-6">
         <Card className="p-6">
-          <h1 className="text-xl font-semibold">Laboratório indisponível</h1>
+          <h1 className="text-xl font-semibold">{t("Laboratório indisponível")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Esta área só abre em ambiente de teste para evitar disparos reais em produção.
+            {t("Esta área só abre em ambiente de teste para evitar disparos reais em produção.")}
           </p>
         </Card>
       </main>
@@ -539,15 +544,16 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
     >
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Laboratório</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("Laboratório")}</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Rode conversas reais de teste, no ritmo de uma pessoa, e veja o que aconteceu no
-            atendimento.
+            {t(
+              "Rode conversas reais de teste, no ritmo de uma pessoa, e veja o que aconteceu no atendimento.",
+            )}
           </p>
         </div>
         <Button variant="outline" onClick={() => void carregar()}>
           <RefreshCw size={16} aria-hidden />
-          <span>Atualizar</span>
+          <span>{t("Atualizar")}</span>
         </Button>
       </header>
 
@@ -558,17 +564,19 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
           <Card className="p-4">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold">Cenário</h2>
+                <h2 className="text-lg font-semibold">{t("Cenário")}</h2>
                 <p className="text-sm text-muted-foreground">
-                  O roteiro abaixo vira mensagens do contato de teste.
+                  {t("O roteiro abaixo vira mensagens do contato de teste.")}
                 </p>
               </div>
-              <Badge variant="outline">{formatarDuracao(totalDoRoteiro)} de roteiro</Badge>
+              <Badge variant="outline">
+                {formatarDuracao(totalDoRoteiro)} {t("de roteiro")}
+              </Badge>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="lab-name">Nome</Label>
+                <Label htmlFor="lab-name">{t("Nome")}</Label>
                 <Input
                   id="lab-name"
                   value={form.name}
@@ -576,7 +584,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                 />
               </div>
               <div className="space-y-2">
-                <Label>Conexão</Label>
+                <Label>{t("Conexão")}</Label>
                 <Select
                   value={form.channel_session_id || "none"}
                   onValueChange={(value) =>
@@ -587,10 +595,10 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Escolha a conexão" />
+                    <SelectValue placeholder={t("Escolha a conexão")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Sem conexão</SelectItem>
+                    <SelectItem value="none">{t("Sem conexão")}</SelectItem>
                     {(dados?.channels ?? []).map((canal) => (
                       <SelectItem key={canal.id} value={canal.id}>
                         {canal.label} {canal.phone_number ? `· ${canal.phone_number}` : ""}
@@ -600,7 +608,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Agente</Label>
+                <Label>{t("Agente")}</Label>
                 <Select
                   value={form.agent_id || "auto"}
                   onValueChange={(value) =>
@@ -608,10 +616,10 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Escolha o agente" />
+                    <SelectValue placeholder={t("Escolha o agente")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Resolver automaticamente</SelectItem>
+                    <SelectItem value="auto">{t("Resolver automaticamente")}</SelectItem>
                     {(dados?.agents ?? []).map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
                         {agent.name}
@@ -622,7 +630,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Modo</Label>
+                <Label>{t("Modo")}</Label>
                 <Select
                   value={form.execution_mode}
                   onValueChange={(value) =>
@@ -633,16 +641,16 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Escolha o modo" />
+                    <SelectValue placeholder={t("Escolha o modo")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="simulated">Simular sem WhatsApp</SelectItem>
-                    <SelectItem value="real_whatsapp">Enviar no WhatsApp real</SelectItem>
+                    <SelectItem value="simulated">{t("Simular sem WhatsApp")}</SelectItem>
+                    <SelectItem value="real_whatsapp">{t("Enviar no WhatsApp real")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lab-phone">Telefone do cliente de teste</Label>
+                <Label htmlFor="lab-phone">{t("Telefone do cliente de teste")}</Label>
                 <Input
                   id="lab-phone"
                   placeholder="+5511999999999"
@@ -651,7 +659,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lab-contact-name">Nome do cliente</Label>
+                <Label htmlFor="lab-contact-name">{t("Nome do cliente")}</Label>
                 <Input
                   id="lab-contact-name"
                   value={form.contact_name}
@@ -659,7 +667,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lab-delay">Atraso padrão por mensagem</Label>
+                <Label htmlFor="lab-delay">{t("Atraso padrão por mensagem")}</Label>
                 <Input
                   id="lab-delay"
                   type="number"
@@ -674,7 +682,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lab-observation">Janela de observação final</Label>
+                <Label htmlFor="lab-observation">{t("Janela de observação final")}</Label>
                 <Input
                   id="lab-observation"
                   type="number"
@@ -688,7 +696,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
             </div>
 
             <div className="mt-4 space-y-2">
-              <Label htmlFor="lab-description">Descrição</Label>
+              <Label htmlFor="lab-description">{t("Descrição")}</Label>
               <Textarea
                 id="lab-description"
                 value={form.description}
@@ -698,7 +706,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
 
             <div className="mt-4 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Label htmlFor="lab-steps">Mensagens do cliente</Label>
+                <Label htmlFor="lab-steps">{t("Mensagens do cliente")}</Label>
                 <Button
                   type="button"
                   size="sm"
@@ -707,7 +715,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                   disabled={gerandoRoteiro}
                 >
                   <Sparkles size={14} aria-hidden />
-                  <span>{gerandoRoteiro ? "Gerando..." : "Gerar com IA"}</span>
+                  <span>{gerandoRoteiro ? t("Gerando...") : t("Gerar com IA")}</span>
                 </Button>
               </div>
               <Textarea
@@ -727,7 +735,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       setForm((atual) => ({ ...atual, is_active: checked }))
                     }
                   />
-                  <span>Cenário ativo</span>
+                  <span>{t("Cenário ativo")}</span>
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <Switch
@@ -736,7 +744,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       setForm((atual) => ({ ...atual, sign_contract: checked }))
                     }
                   />
-                  <span>Assinar contrato no teste</span>
+                  <span>{t("Assinar contrato no teste")}</span>
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <Switch
@@ -745,7 +753,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       setForm((atual) => ({ ...atual, create_calendar_event: checked }))
                     }
                   />
-                  <span>Esperar agenda no teste</span>
+                  <span>{t("Esperar agenda no teste")}</span>
                 </label>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -760,11 +768,11 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                     })
                   }
                 >
-                  Usar modelo
+                  {t("Usar modelo")}
                 </Button>
                 <Button type="button" onClick={() => void salvar()} disabled={salvando}>
                   <Save size={16} aria-hidden />
-                  <span>{salvando ? "Salvando..." : "Salvar cenário"}</span>
+                  <span>{salvando ? t("Salvando...") : t("Salvar cenário")}</span>
                 </Button>
               </div>
             </div>
@@ -775,18 +783,20 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
           <Card className="p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">Rodar teste</h2>
-                <p className="text-sm text-muted-foreground">A execução usa o cenário salvo.</p>
+                <h2 className="text-lg font-semibold">{t("Rodar teste")}</h2>
+                <p className="text-sm text-muted-foreground">
+                  {t("A execução usa o cenário salvo.")}
+                </p>
               </div>
             </div>
             <label className="mb-4 flex items-center gap-2 text-sm">
               <Switch checked={resetarContato} onCheckedChange={setResetarContato} />
-              <span>Apagar o histórico desse telefone antes de rodar</span>
+              <span>{t("Apagar o histórico desse telefone antes de rodar")}</span>
             </label>
             <div className="space-y-3">
               {(dados?.scenarios ?? []).length === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Salve um cenário para iniciar a primeira rodada.
+                  {t("Salve um cenário para iniciar a primeira rodada.")}
                 </p>
               )}
               {(dados?.scenarios ?? []).map((cenario) => (
@@ -795,15 +805,15 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                     <div className="min-w-0">
                       <h3 className="truncate text-sm font-medium">{cenario.name}</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {cenario.steps.length} mensagens · {cenario.phone_number} ·{" "}
+                        {cenario.steps.length} {t("mensagens")} · {cenario.phone_number} ·{" "}
                         {rotuloModoExecucao(cenario.execution_mode)}
                       </p>
                     </div>
-                    <Badge variant="outline">{cenario.is_active ? "Ativo" : "Inativo"}</Badge>
+                    <Badge variant="outline">{cenario.is_active ? t("Ativo") : t("Inativo")}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => editarCenario(cenario)}>
-                      Editar
+                      {t("Editar")}
                     </Button>
                     <Button
                       size="sm"
@@ -813,8 +823,8 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       <Play size={14} aria-hidden />
                       <span>
                         {cenario.execution_mode === "simulated"
-                          ? "Rodar simulação"
-                          : "Enviar teste real"}
+                          ? t("Rodar simulação")
+                          : t("Enviar teste real")}
                       </span>
                     </Button>
                   </div>
@@ -826,9 +836,11 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Rodadas recentes</h2>
+        <h2 className="text-lg font-semibold">{t("Rodadas recentes")}</h2>
         {(dados?.runs ?? []).length === 0 ? (
-          <Card className="p-4 text-sm text-muted-foreground">Nenhuma rodada iniciada ainda.</Card>
+          <Card className="p-4 text-sm text-muted-foreground">
+            {t("Nenhuma rodada iniciada ainda.")}
+          </Card>
         ) : (
           <div className="grid gap-4">
             {(dados?.runs ?? []).map((run) => {
@@ -838,7 +850,9 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-medium">Rodada {run.id.slice(0, 8)}</h3>
+                        <h3 className="font-medium">
+                          {t("Rodada")} {run.id.slice(0, 8)}
+                        </h3>
                         <Badge variant="outline" className={status.className}>
                           {status.label}
                         </Badge>
@@ -847,16 +861,16 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       <p className="mt-1 text-sm text-muted-foreground">
                         {run.phone_number} · passo{" "}
                         {Math.min(run.current_step_index, run.script.length)} de {run.script.length}{" "}
-                        · início {formatarData(run.started_at)}
+                        · {t("início")} {formatarData(run.started_at, tagDoIdioma)}
                       </p>
                       {run.next_step_at && (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Próxima mensagem em {formatarData(run.next_step_at)}
+                          {t("Próxima mensagem em")} {formatarData(run.next_step_at, tagDoIdioma)}
                         </p>
                       )}
                       {run.observation_until && (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Observando até {formatarData(run.observation_until)}
+                          {t("Observando até")} {formatarData(run.observation_until, tagDoIdioma)}
                         </p>
                       )}
                       {run.last_error && (
@@ -872,7 +886,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                           disabled={cancelingRunId === run.id}
                         >
                           <Square size={14} aria-hidden />
-                          <span>Cancelar</span>
+                          <span>{t("Cancelar")}</span>
                         </Button>
                       )}
                       {run.status !== "completed" && run.status !== "cancelled" && (
@@ -882,7 +896,7 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                           onClick={() => void completarRodada(run.id)}
                           disabled={completingRunId === run.id}
                         >
-                          Gerar relatório
+                          {t("Gerar relatório")}
                         </Button>
                       )}
                       {run.report && (
@@ -894,14 +908,20 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                         >
                           <Sparkles size={14} aria-hidden />
                           <span>
-                            {run.report.ai_analysis ? "Refazer análise IA" : "Analisar com IA"}
+                            {run.report.ai_analysis
+                              ? t("Refazer análise IA")
+                              : t("Analisar com IA")}
                           </span>
                         </Button>
                       )}
                       {run.report && (
-                        <Button size="sm" variant="outline" onClick={() => baixarRelatorio(run)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => baixarRelatorio(run, tagDoIdioma)}
+                        >
                           <Download size={14} aria-hidden />
-                          <span>Baixar relatório</span>
+                          <span>{t("Baixar relatório")}</span>
                         </Button>
                       )}
                     </div>
@@ -910,10 +930,10 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                   {run.report && (
                     <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
                       <div className="rounded-sm border border-border p-3">
-                        <h4 className="text-sm font-medium">Resumo</h4>
+                        <h4 className="text-sm font-medium">{t("Resumo")}</h4>
                         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
                           <div>
-                            <dt className="text-xs text-muted-foreground">Cliente</dt>
+                            <dt className="text-xs text-muted-foreground">{t("Cliente")}</dt>
                             <dd>{run.report.counts.customer_messages}</dd>
                           </div>
                           <div>
@@ -925,26 +945,26 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                             <dd>
                               {run.report.counts.ai_runs}
                               {run.report.counts.ai_run_errors > 0
-                                ? ` / ${run.report.counts.ai_run_errors} falhas`
+                                ? ` / ${run.report.counts.ai_run_errors} ${t("falhas")}`
                                 : ""}
                             </dd>
                           </div>
                           <div>
-                            <dt className="text-xs text-muted-foreground">1a resposta</dt>
+                            <dt className="text-xs text-muted-foreground">{t("1a resposta")}</dt>
                             <dd>{formatarDuracao(run.report.timing.first_response_seconds)}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs text-muted-foreground">Contratos</dt>
+                            <dt className="text-xs text-muted-foreground">{t("Contratos")}</dt>
                             <dd>
                               {run.report.counts.zapsign_documents} /{" "}
-                              {run.report.counts.signed_documents} assinados
+                              {run.report.counts.signed_documents} {t("assinados")}
                             </dd>
                           </div>
                           <div>
-                            <dt className="text-xs text-muted-foreground">Agenda</dt>
+                            <dt className="text-xs text-muted-foreground">{t("Agenda")}</dt>
                             <dd>
                               {run.report.counts.appointments} /{" "}
-                              {run.report.counts.appointments_with_meet} com Meet
+                              {run.report.counts.appointments_with_meet} {t("com Meet")}
                             </dd>
                           </div>
                         </dl>
@@ -958,13 +978,13 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
                       </div>
 
                       <div className="rounded-sm border border-border p-3">
-                        <h4 className="text-sm font-medium">Transcrição observada</h4>
+                        <h4 className="text-sm font-medium">{t("Transcrição observada")}</h4>
                         <div className="mt-3 max-h-80 space-y-2 overflow-auto pr-2">
                           {run.report.transcript.slice(-20).map((message) => (
                             <div key={message.id} className="rounded-sm bg-muted px-3 py-2 text-sm">
                               <div className="mb-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                                <span>{message.actor === "cliente" ? "Cliente" : "CRM/IA"}</span>
-                                <span>{formatarData(message.at)}</span>
+                                <span>{message.actor === "cliente" ? t("Cliente") : "CRM/IA"}</span>
+                                <span>{formatarData(message.at, tagDoIdioma)}</span>
                               </div>
                               <p className="whitespace-pre-wrap">{message.body}</p>
                             </div>
@@ -974,17 +994,17 @@ export function LaboratorioDeJornadasClient({ habilitado }: { habilitado: boolea
 
                       {run.report.ai_analysis && (
                         <div className="rounded-sm border border-border p-3 lg:col-span-2">
-                          <h4 className="text-sm font-medium">Análise de IA</h4>
+                          <h4 className="text-sm font-medium">{t("Análise de IA")}</h4>
                           <p className="mt-2 text-sm text-muted-foreground">
                             {run.report.ai_analysis.summary}
                           </p>
                           <div className="mt-4 grid gap-3 md:grid-cols-2">
                             {[
-                              ["Gaps", run.report.ai_analysis.gaps],
-                              ["Melhorias", run.report.ai_analysis.improvements],
-                              ["FAQs", run.report.ai_analysis.faqs],
-                              ["Riscos", run.report.ai_analysis.risks],
-                              ["Próximos testes", run.report.ai_analysis.next_tests],
+                              [t("Gaps"), run.report.ai_analysis.gaps],
+                              [t("Melhorias"), run.report.ai_analysis.improvements],
+                              [t("FAQs"), run.report.ai_analysis.faqs],
+                              [t("Riscos"), run.report.ai_analysis.risks],
+                              [t("Próximos testes"), run.report.ai_analysis.next_tests],
                             ].map(([titulo, itens]) => (
                               <div key={String(titulo)} className="rounded-sm bg-muted p-3">
                                 <h5 className="text-xs font-medium text-muted-foreground uppercase">

@@ -123,6 +123,12 @@ const EM_PORTUGUES_DE_PROPOSITO: { arquivo: string; texto: string; motivo: strin
     texto: "nenhum",
     motivo: "valor de wire do papel da etapa; o rótulo visível já sai por t(ROTULO_DO_PAPEL[p])",
   },
+  {
+    arquivo: "app/app/integrations/zapsign/_components/ZapSignTemplatesClient.tsx",
+    texto: '{"{{Escritorio}}":"Talismã Advocacia"}',
+    motivo:
+      "placeholder de JSON técnico: as chaves entre {{ }} precisam casar com o modelo ZapSign e traduzir o exemplo quebraria a cópia colável",
+  },
 ];
 
 function ehExcecaoDeclarada(arquivo: string, texto: string): boolean {

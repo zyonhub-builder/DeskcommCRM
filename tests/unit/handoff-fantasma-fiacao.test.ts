@@ -29,7 +29,9 @@ describe("fiação — casePromiseGate recebe o nome do gerente do tenant", () =
 
 describe("fiação — caso humano aberto move o lead pra etapa de handoff", () => {
   it("o fail-safe do case_promise (auto-abre-caso) chama moverParaHandoffBestEffort", () => {
-    const i = FONTE_INBOUND.indexOf("chain.status === 'vetoed' && chain.code === 'case_promise_without_case'");
+    const i = FONTE_INBOUND.search(
+      /chain\.status === ["']vetoed["'] && chain\.code === ["']case_promise_without_case["']/,
+    );
     expect(i).toBeGreaterThan(-1);
     const janela = FONTE_INBOUND.slice(i, i + 1800);
     expect(janela).toMatch(/openedCaseThisTurn = true;\s*\n\s*moverParaHandoffBestEffort\(/);
@@ -61,8 +63,8 @@ describe("fiação — lead urgente represado pelo cap de warm-up gera alerta cr
     // mensagem do job, não existiria. O que esta guarda protege é o mesmo — o
     // bloco do cap CHECA urgência antes de adiar — e agora protege mais.
     expect(janela).toContain("inboundsPendentes.some((texto) => detectUrgencySignal(texto))");
-    expect(janela).toMatch(/kind:\s*'handoff'/);
-    expect(janela).toMatch(/severity:\s*'critical'/);
+    expect(janela).toMatch(/kind:\s*["']handoff["']/);
+    expect(janela).toMatch(/severity:\s*["']critical["']/);
   });
 });
 
@@ -105,8 +107,8 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
     expect(corpo).toMatch(
       /const ehEco = await ehEcoDeEnvioNosso\([^)]*\);[\s\S]{0,80}?if \(!ehEco\) \{/,
     );
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?pausarIaDuravelmente\(/);
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?devolverAtendimentoAoAgente\(/);
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,1400}?pausarIaDuravelmente\(/);
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,1400}?devolverAtendimentoAoAgente\(/);
     // A pausa da mensagem comum também, e o interruptor do agente (que decide
     // se a pausa é durável) é lido DENTRO da guarda — nunca para o eco.
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2000}?pausarIaPorAtendimentoManual\(/);

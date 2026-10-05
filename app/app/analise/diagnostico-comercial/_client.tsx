@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import {
   useDiagnosticoComercial,
@@ -98,8 +99,8 @@ function nomeArquivoPdf(janela?: DiagnosticoComercialPayload["janela"]): string 
   return `diagnostico-comercial-ia-${data}.pdf`;
 }
 
-function dataHora(iso: string): string {
-  return new Intl.DateTimeFormat("pt-BR", {
+function dataHora(iso: string, tagDoIdioma: string): string {
+  return new Intl.DateTimeFormat(tagDoIdioma, {
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
@@ -108,11 +109,14 @@ function dataHora(iso: string): string {
   }).format(new Date(iso));
 }
 
-function janelaLegivel(janela: RelatorioAnaliseIaDiagnosticoComercial["janela"]): string {
-  const from = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(
+function janelaLegivel(
+  janela: RelatorioAnaliseIaDiagnosticoComercial["janela"],
+  tagDoIdioma: string,
+): string {
+  const from = new Intl.DateTimeFormat(tagDoIdioma, { day: "2-digit", month: "2-digit" }).format(
     new Date(janela.from),
   );
-  const to = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(
+  const to = new Intl.DateTimeFormat(tagDoIdioma, { day: "2-digit", month: "2-digit" }).format(
     new Date(janela.to),
   );
   return `${janela.dias}d · ${from}–${to}`;
@@ -413,6 +417,7 @@ function HistoricoAnalisesCard({
   onAbrir: (relatorio: RelatorioAnaliseIaDiagnosticoComercial) => void;
 }) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const [baixandoId, setBaixandoId] = useState<string | null>(null);
 
   const baixarPdf = async (relatorio: RelatorioAnaliseIaDiagnosticoComercial) => {
@@ -470,10 +475,10 @@ function HistoricoAnalisesCard({
               {relatorios.map((relatorio) => (
                 <TableRow key={relatorio.id}>
                   <TableCell className="whitespace-nowrap">
-                    {dataHora(relatorio.created_at)}
+                    {dataHora(relatorio.created_at, tagDoIdioma)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {janelaLegivel(relatorio.janela)}
+                    {janelaLegivel(relatorio.janela, tagDoIdioma)}
                   </TableCell>
                   <TableCell className="max-w-56 truncate">
                     {relatorio.analise.custo.provider}/{relatorio.analise.custo.model}
