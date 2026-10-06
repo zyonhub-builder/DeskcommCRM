@@ -30,6 +30,20 @@ export const inviteMemberSchema = z.object({
 });
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 
+export const createTeamUserSchema = z
+  .object({
+    email: z.string().trim().email(),
+    full_name: z.string().trim().min(2).max(120).optional(),
+    password: z.string().min(8).max(128),
+    role: z.enum(ROLES),
+    interface_settings: interfaceSettingsSchema.optional(),
+  })
+  .refine((v) => !v.interface_settings || interfaceTemDestino(v.interface_settings, v.role), {
+    message: "Selecione ao menos uma área permitida ao papel.",
+    path: ["interface_settings"],
+  });
+export type CreateTeamUserInput = z.infer<typeof createTeamUserSchema>;
+
 export const acceptInviteSchema = z.object({
   token: z.string().min(20),
 });

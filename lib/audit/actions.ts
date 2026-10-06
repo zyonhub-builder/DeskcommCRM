@@ -116,6 +116,8 @@ export const AUDIT_ACTIONS = [
   // ser membro. O REENVIO de um convite audita como `member.invited` — é uma
   // nova emissão do mesmo convite.
   "member.invite_revoked",
+  // Admin do tenant criou a conta e já entregou uma senha inicial por fora do sistema.
+  "member.created_by_admin",
   "token.created",
   "token.revoked",
   "profile.updated",
